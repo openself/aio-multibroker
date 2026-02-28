@@ -1,0 +1,70 @@
+[project]
+name = "aio-multibroker"
+version = "2.0.0"
+description = "Async multi-broker library for Alor OpenAPI v2"
+authors = [
+    {name = "s.borisov"}
+]
+requires-python = ">=3.12"
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.12"
+aiohttp = "^3.11.12"
+websockets = "^14.2"
+pyjwt = "^2.10.1"
+multidict = "^6.1.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0"
+pytest-asyncio = ">=0.24"
+aioresponses = ">=0.7"
+ruff = "^0.15.4"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "SIM",   # flake8-simplify
+    "TCH",   # flake8-type-checking
+    "RUF",   # ruff-specific
+    "ASYNC", # flake8-async
+    "T20",   # flake8-print (no print() in library code)
+]
+ignore = [
+    "E501",    # line length handled by formatter
+    "B008",    # function call in default arg (used intentionally in enums)
+    "B027",    # empty method in ABC without @abstractmethod (intentional overridable hooks)
+    "N999",    # PascalCase module names (AlorClient.py, AlorWebsocket.py — legacy convention)
+    "N818",    # MBException without Error suffix (public API, can't rename)
+    "RUF001",  # ambiguous unicode in strings — project uses Cyrillic intentionally
+    "RUF002",  # ambiguous unicode in docstrings — Russian docstrings
+    "RUF003",  # ambiguous unicode in comments — Russian comments
+    "TC001",   # move app import into TYPE_CHECKING — adds complexity for marginal gain
+    "TC002",   # move third-party import into TYPE_CHECKING
+    "TC003",   # move stdlib import into TYPE_CHECKING
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["T20", "B018"]
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
