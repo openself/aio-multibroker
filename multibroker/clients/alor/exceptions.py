@@ -9,20 +9,21 @@ class AlorGetTokenException(AlorException):
     """refresh_token → JWT failed."""
 
     def __init__(self, status_code: int, response: str) -> None:
-        super().__init__(f"ALOR token refresh failed: status [{status_code}], response [{response}]")
+        super().__init__(f'ALOR token refresh failed: status [{status_code}], response [{response}]')
         self.status_code = status_code
-        self.body = {"response": response}
+        self.body = {'response': response}
 
 
 # ---------------------------------------------------------------------------
 # REST exceptions — дифференцированная иерархия (S-02)
 # ---------------------------------------------------------------------------
 
+
 class AlorRestException(AlorException):
     """Base for REST API errors. Всегда содержит status_code и body."""
 
     def __init__(self, status_code: int, body: dict | None) -> None:
-        super().__init__(f"ALOR REST API error: status [{status_code}], response [{body}]")
+        super().__init__(f'ALOR REST API error: status [{status_code}], response [{body}]')
         self.status_code = status_code
         self.body = body
 

@@ -2,28 +2,29 @@
 
 import pytest
 
-from multibroker.clients.alor.subscriptions import (
+from multibroker.clients.alor.AlorWebsocket import (
     OrdersSubscription,
     PositionsSubscription,
     SummariesSubscription,
     TradesSubscription,
 )
+from multibroker.ws_manager import WebsocketMessage
 
 
 class TestOrdersSubscription:
     def test_message_format(self):
-        sub = OrdersSubscription(exchange="MOEX", portfolio="750001")
+        sub = OrdersSubscription(exchange='MOEX', portfolio='750001')
         msg = sub.get_subscription_message()
-        assert msg["opcode"] == "OrdersGetAndSubscribeV2"
-        assert msg["exchange"] == "MOEX"
-        assert msg["portfolio"] == "750001"
-        assert msg["format"] == "Simple"
-        assert "orderStatuses" not in msg
+        assert msg['opcode'] == 'OrdersGetAndSubscribeV2'
+        assert msg['exchange'] == 'MOEX'
+        assert msg['portfolio'] == '750001'
+        assert msg['format'] == 'Simple'
+        assert 'orderStatuses' not in msg
 
     def test_message_with_statuses(self):
-        sub = OrdersSubscription(exchange="MOEX", portfolio="750001", order_statuses=["working", "filled"])
+        sub = OrdersSubscription(exchange='MOEX', portfolio='750001', order_statuses=['working', 'filled'])
         msg = sub.get_subscription_message()
-        assert msg["orderStatuses"] == ["working", "filled"]
+        assert msg['orderStatuses'] == ['working', 'filled']
 
     def test_subscription_id_is_uuid(self):
         sub = OrdersSubscription()
@@ -34,25 +35,25 @@ class TestOrdersSubscription:
 
 class TestTradesSubscription:
     def test_message_format(self):
-        sub = TradesSubscription(exchange="MOEX", portfolio="750001", skip_history=True)
+        sub = TradesSubscription(exchange='MOEX', portfolio='750001', skip_history=True)
         msg = sub.get_subscription_message()
-        assert msg["opcode"] == "TradesGetAndSubscribeV2"
-        assert msg["skipHistory"] is True
+        assert msg['opcode'] == 'TradesGetAndSubscribeV2'
+        assert msg['skipHistory'] is True
 
 
 class TestPositionsSubscription:
     def test_message_format(self):
-        sub = PositionsSubscription(exchange="MOEX", portfolio="750001")
+        sub = PositionsSubscription(exchange='MOEX', portfolio='750001')
         msg = sub.get_subscription_message()
-        assert msg["opcode"] == "PositionsGetAndSubscribeV2"
-        assert msg["portfolio"] == "750001"
+        assert msg['opcode'] == 'PositionsGetAndSubscribeV2'
+        assert msg['portfolio'] == '750001'
 
 
 class TestSummariesSubscription:
     def test_message_format(self):
-        sub = SummariesSubscription(exchange="MOEX", portfolio="750001")
+        sub = SummariesSubscription(exchange='MOEX', portfolio='750001')
         msg = sub.get_subscription_message()
-        assert msg["opcode"] == "SummariesGetAndSubscribeV2"
+        assert msg['opcode'] == 'SummariesGetAndSubscribeV2'
 
 
 class TestCallbacks:
@@ -64,11 +65,10 @@ class TestCallbacks:
             received.append(data)
 
         sub = OrdersSubscription(callbacks=[on_order])
-        from multibroker.ws_manager import WebsocketMessage
-        msg = WebsocketMessage(subscription_id=sub.get_subscription_id(), message={"id": "123", "status": "filled"})
+        msg = WebsocketMessage(subscription_id=sub.get_subscription_id(), message={'id': '123', 'status': 'filled'})
         await sub.process_message(msg)
         assert len(received) == 1
-        assert received[0]["status"] == "filled"
+        assert received[0]['status'] == 'filled'
 
     @pytest.mark.asyncio
     async def test_trades_callback_receives_fill_data(self):
@@ -78,11 +78,10 @@ class TestCallbacks:
             received.append(data)
 
         sub = TradesSubscription(callbacks=[on_trade])
-        from multibroker.ws_manager import WebsocketMessage
         msg = WebsocketMessage(
             subscription_id=sub.get_subscription_id(),
-            message={"id": "456", "price": 100.5, "qty": 10, "side": "buy"},
+            message={'id': '456', 'price': 100.5, 'qty': 10, 'side': 'buy'},
         )
         await sub.process_message(msg)
         assert len(received) == 1
-        assert received[0]["price"] == 100.5
+        assert received[0]['price'] == 100.5

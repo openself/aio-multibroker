@@ -33,6 +33,7 @@ class ExecutionCondition(enum.StrEnum):
 
 class StopOrderCondition(enum.StrEnum):
     """Условие срабатывания стоп-заявки (синоним ExecutionCondition для stop API)."""
+
     LESS = 'Less'
     MORE = 'More'
     LESS_OR_EQUAL = 'LessOrEqual'

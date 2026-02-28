@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-TZ_MSK = ZoneInfo("Europe/Moscow")
+TZ_MSK = ZoneInfo('Europe/Moscow')
 
 
 def msk_datetime_to_utc_timestamp(dt: datetime) -> int:

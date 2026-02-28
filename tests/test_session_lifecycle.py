@@ -10,6 +10,7 @@ Scenarios:
   - Shutdown with no WS managers started → no crash
   - Shutdown with websocket_mgr=None → no crash
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -22,7 +23,6 @@ from tests.conftest import _make_stub_alor_client
 
 
 class TestSessionCreation:
-
     @pytest.mark.asyncio
     async def test_session_created_lazily(self):
         """rest_session is None until first _get_rest_session() call."""
@@ -56,7 +56,6 @@ class TestSessionCreation:
 
 
 class TestSessionRecreation:
-
     @pytest.mark.asyncio
     async def test_recreate_closes_old_session(self):
         """_recreate_rest_session closes existing session, next call creates new."""
@@ -82,7 +81,6 @@ class TestSessionRecreation:
 
 
 class TestClose:
-
     @pytest.mark.asyncio
     async def test_close_with_no_session(self):
         """close() when rest_session is None → safe no-op."""
@@ -113,7 +111,6 @@ class TestClose:
 
 
 class TestShutdownWebsockets:
-
     @pytest.mark.asyncio
     async def test_shutdown_empty_subscription_sets(self):
         """shutdown_websockets with no subscription sets → no crash."""

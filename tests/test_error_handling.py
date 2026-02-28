@@ -1,7 +1,9 @@
 """Unit-тесты для иерархии исключений (§2.2, §2.3, G-005)."""
+
 import pytest
 from multidict import CIMultiDict, CIMultiDictProxy
 
+from multibroker.clients.alor.AlorClient import AlorClient
 from multibroker.clients.alor.exceptions import (
     AlorRestException,
     BrokerAuthError,
@@ -19,8 +21,6 @@ def _make_headers(**kwargs) -> CIMultiDictProxy:
 
 def _make_client_preprocess():
     """Return a standalone _preprocess_rest_response bound to a throwaway AlorClient-like object."""
-    # We import here to avoid heavy __init__ JWT flow.
-    from multibroker.clients.alor.AlorClient import AlorClient
 
     class _Stub:
         _preprocess_rest_response = AlorClient._preprocess_rest_response
@@ -35,11 +35,11 @@ class TestPreprocessRestResponse:
         self.stub = _make_client_preprocess()
 
     def test_200_no_exception(self):
-        self.stub._preprocess_rest_response(200, _make_headers(), {"ok": True})
+        self.stub._preprocess_rest_response(200, _make_headers(), {'ok': True})
 
     def test_400_raises_bad_request(self):
         with pytest.raises(BrokerBadRequestError) as exc_info:
-            self.stub._preprocess_rest_response(400, _make_headers(), {"message": "bad"})
+            self.stub._preprocess_rest_response(400, _make_headers(), {'message': 'bad'})
         assert exc_info.value.status_code == 400
 
     def test_401_raises_auth_error(self):
@@ -56,7 +56,7 @@ class TestPreprocessRestResponse:
             self.stub._preprocess_rest_response(404, _make_headers(), None)
 
     def test_429_raises_rate_limit_with_retry_after(self):
-        headers = _make_headers(**{"Retry-After": "2.5"})
+        headers = _make_headers(**{'Retry-After': '2.5'})
         with pytest.raises(BrokerRateLimitError) as exc_info:
             self.stub._preprocess_rest_response(429, headers, None)
         assert exc_info.value.retry_after_sec == 2.5
@@ -68,7 +68,7 @@ class TestPreprocessRestResponse:
 
     def test_500_raises_server_error(self):
         with pytest.raises(BrokerServerError) as exc_info:
-            self.stub._preprocess_rest_response(500, _make_headers(), {"error": "internal"})
+            self.stub._preprocess_rest_response(500, _make_headers(), {'error': 'internal'})
         assert exc_info.value.status_code == 500
 
     def test_502_raises_server_error(self):

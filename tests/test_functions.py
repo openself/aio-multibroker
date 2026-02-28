@@ -1,4 +1,5 @@
 """Unit-тесты для multibroker.clients.alor.functions (§6.1, S-03)."""
+
 import re
 from datetime import UTC, datetime
 
@@ -11,12 +12,13 @@ from multibroker.clients.alor.functions import (
     utc_to_msk_datetime,
 )
 
-_UUID4_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+_UUID4_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
 
 
 # ---------------------------------------------------------------------------
 # datetime conversion round-trips
 # ---------------------------------------------------------------------------
+
 
 def test_msk_datetime_to_utc_timestamp_and_back():
     """MSK naive → UTC timestamp → MSK naive round-trip."""
@@ -65,9 +67,10 @@ def test_utc_to_msk_datetime_with_tzinfo():
 # get_request_id — UUID4 (S-03)
 # ---------------------------------------------------------------------------
 
+
 def test_get_request_id_is_uuid4():
     rid = get_request_id()
-    assert _UUID4_RE.match(rid), f"Expected UUID4 format, got: {rid}"
+    assert _UUID4_RE.match(rid), f'Expected UUID4 format, got: {rid}'
 
 
 def test_get_request_id_no_collisions_100k():

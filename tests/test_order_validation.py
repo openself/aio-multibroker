@@ -2,6 +2,7 @@
 
 All tests must work WITHOUT real network (no __init__ JWT call).
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -17,26 +18,26 @@ from tests.conftest import _make_stub_alor_client
 # _validate_order_params — the core guard
 # ---------------------------------------------------------------------------
 
-class TestValidateOrderParams:
 
+class TestValidateOrderParams:
     def test_empty_symbol_raises(self):
-        with pytest.raises(ValueError, match="symbol must not be empty"):
+        with pytest.raises(ValueError, match='symbol must not be empty'):
             AlorClient._validate_order_params(symbol='', side=OrderSide.BUY, quantity=1, portfolio='D12345')
 
     def test_none_side_raises(self):
-        with pytest.raises(ValueError, match="side must be specified"):
+        with pytest.raises(ValueError, match='side must be specified'):
             AlorClient._validate_order_params(symbol='SBER', side=None, quantity=1, portfolio='D12345')
 
     def test_zero_quantity_raises(self):
-        with pytest.raises(ValueError, match="quantity must be > 0"):
+        with pytest.raises(ValueError, match='quantity must be > 0'):
             AlorClient._validate_order_params(symbol='SBER', side=OrderSide.BUY, quantity=0, portfolio='D12345')
 
     def test_negative_quantity_raises(self):
-        with pytest.raises(ValueError, match="quantity must be > 0"):
+        with pytest.raises(ValueError, match='quantity must be > 0'):
             AlorClient._validate_order_params(symbol='SBER', side=OrderSide.SELL, quantity=-5, portfolio='D12345')
 
     def test_empty_portfolio_raises(self):
-        with pytest.raises(ValueError, match="portfolio must not be empty"):
+        with pytest.raises(ValueError, match='portfolio must not be empty'):
             AlorClient._validate_order_params(symbol='SBER', side=OrderSide.BUY, quantity=1, portfolio='')
 
     def test_valid_params_pass(self):
@@ -55,36 +56,45 @@ class TestValidateOrderParams:
 # create_market_order validation
 # ---------------------------------------------------------------------------
 
-class TestCreateMarketOrderValidation:
 
+class TestCreateMarketOrderValidation:
     @pytest.mark.asyncio
     async def test_zero_quantity_rejected_before_network(self):
         """quantity=0 → ValueError BEFORE any network call."""
         client = _make_stub_alor_client()
         mock = AsyncMock()
-        with patch.object(MBClient, "_create_rest_call", mock), pytest.raises(ValueError, match="quantity"):
+        with patch.object(MBClient, '_create_rest_call', mock), pytest.raises(ValueError, match='quantity'):
             await client.create_market_order(
-                portfolio="D12345", exchange=Exchange.MOEX,
-                symbol="SBER", side=OrderSide.BUY, quantity=0,
+                portfolio='D12345',
+                exchange=Exchange.MOEX,
+                symbol='SBER',
+                side=OrderSide.BUY,
+                quantity=0,
             )
         mock.assert_not_awaited()  # No network call made
 
     @pytest.mark.asyncio
     async def test_none_side_rejected(self):
         client = _make_stub_alor_client()
-        with pytest.raises(ValueError, match="side"):
+        with pytest.raises(ValueError, match='side'):
             await client.create_market_order(
-                portfolio="D12345", exchange=Exchange.MOEX,
-                symbol="SBER", side=None, quantity=10,
+                portfolio='D12345',
+                exchange=Exchange.MOEX,
+                symbol='SBER',
+                side=None,
+                quantity=10,
             )
 
     @pytest.mark.asyncio
     async def test_empty_symbol_rejected(self):
         client = _make_stub_alor_client()
-        with pytest.raises(ValueError, match="symbol"):
+        with pytest.raises(ValueError, match='symbol'):
             await client.create_market_order(
-                portfolio="D12345", exchange=Exchange.MOEX,
-                symbol="", side=OrderSide.BUY, quantity=10,
+                portfolio='D12345',
+                exchange=Exchange.MOEX,
+                symbol='',
+                side=OrderSide.BUY,
+                quantity=10,
             )
 
 
@@ -92,33 +102,45 @@ class TestCreateMarketOrderValidation:
 # create_limit_order validation
 # ---------------------------------------------------------------------------
 
-class TestCreateLimitOrderValidation:
 
+class TestCreateLimitOrderValidation:
     @pytest.mark.asyncio
     async def test_zero_price_rejected(self):
         client = _make_stub_alor_client()
-        with pytest.raises(ValueError, match="price must be > 0"):
+        with pytest.raises(ValueError, match='price must be > 0'):
             await client.create_limit_order(
-                portfolio="D12345", exchange=Exchange.MOEX,
-                symbol="SBER", side=OrderSide.BUY, quantity=10, price=0.0,
+                portfolio='D12345',
+                exchange=Exchange.MOEX,
+                symbol='SBER',
+                side=OrderSide.BUY,
+                quantity=10,
+                price=0.0,
             )
 
     @pytest.mark.asyncio
     async def test_negative_price_rejected(self):
         client = _make_stub_alor_client()
-        with pytest.raises(ValueError, match="price must be > 0"):
+        with pytest.raises(ValueError, match='price must be > 0'):
             await client.create_limit_order(
-                portfolio="D12345", exchange=Exchange.MOEX,
-                symbol="SBER", side=OrderSide.BUY, quantity=10, price=-1.5,
+                portfolio='D12345',
+                exchange=Exchange.MOEX,
+                symbol='SBER',
+                side=OrderSide.BUY,
+                quantity=10,
+                price=-1.5,
             )
 
     @pytest.mark.asyncio
     async def test_zero_quantity_rejected(self):
         client = _make_stub_alor_client()
-        with pytest.raises(ValueError, match="quantity"):
+        with pytest.raises(ValueError, match='quantity'):
             await client.create_limit_order(
-                portfolio="D12345", exchange=Exchange.MOEX,
-                symbol="SBER", side=OrderSide.BUY, quantity=0, price=100.0,
+                portfolio='D12345',
+                exchange=Exchange.MOEX,
+                symbol='SBER',
+                side=OrderSide.BUY,
+                quantity=0,
+                price=100.0,
             )
 
 
@@ -126,38 +148,50 @@ class TestCreateLimitOrderValidation:
 # create_limit_stop_order validation
 # ---------------------------------------------------------------------------
 
-class TestCreateLimitStopOrderValidation:
 
+class TestCreateLimitStopOrderValidation:
     @pytest.mark.asyncio
     async def test_zero_price_rejected(self):
         client = _make_stub_alor_client()
-        with pytest.raises(ValueError, match="price must be > 0"):
+        with pytest.raises(ValueError, match='price must be > 0'):
             await client.create_limit_stop_order(
-                portfolio="750001", exchange=Exchange.MOEX,
-                symbol="SiH5", side=OrderSide.SELL, quantity=1,
-                price=0.0, trigger_price=100.0,
+                portfolio='750001',
+                exchange=Exchange.MOEX,
+                symbol='SiH5',
+                side=OrderSide.SELL,
+                quantity=1,
+                price=0.0,
+                trigger_price=100.0,
                 condition=ExecutionCondition.LESS_OR_EQUAL,
             )
 
     @pytest.mark.asyncio
     async def test_zero_trigger_price_rejected(self):
         client = _make_stub_alor_client()
-        with pytest.raises(ValueError, match="Trigger price must be > 0"):
+        with pytest.raises(ValueError, match='Trigger price must be > 0'):
             await client.create_limit_stop_order(
-                portfolio="750001", exchange=Exchange.MOEX,
-                symbol="SiH5", side=OrderSide.SELL, quantity=1,
-                price=100.0, trigger_price=0.0,
+                portfolio='750001',
+                exchange=Exchange.MOEX,
+                symbol='SiH5',
+                side=OrderSide.SELL,
+                quantity=1,
+                price=100.0,
+                trigger_price=0.0,
                 condition=ExecutionCondition.LESS_OR_EQUAL,
             )
 
     @pytest.mark.asyncio
     async def test_none_side_rejected(self):
         client = _make_stub_alor_client()
-        with pytest.raises(ValueError, match="side"):
+        with pytest.raises(ValueError, match='side'):
             await client.create_limit_stop_order(
-                portfolio="750001", exchange=Exchange.MOEX,
-                symbol="SiH5", side=None, quantity=1,
-                price=100.0, trigger_price=90.0,
+                portfolio='750001',
+                exchange=Exchange.MOEX,
+                symbol='SiH5',
+                side=None,
+                quantity=1,
+                price=100.0,
+                trigger_price=90.0,
                 condition=ExecutionCondition.LESS_OR_EQUAL,
             )
 
@@ -166,26 +200,34 @@ class TestCreateLimitStopOrderValidation:
 # create_stop_order validation
 # ---------------------------------------------------------------------------
 
-class TestCreateStopOrderValidation:
 
+class TestCreateStopOrderValidation:
     @pytest.mark.asyncio
     async def test_zero_trigger_price_rejected(self):
         client = _make_stub_alor_client()
-        with pytest.raises(ValueError, match="Trigger price must be > 0"):
+        with pytest.raises(ValueError, match='Trigger price must be > 0'):
             await client.create_stop_order(
-                portfolio="750001", exchange=Exchange.MOEX,
-                symbol="SiH5", side=OrderSide.SELL, quantity=1,
-                condition=ExecutionCondition.LESS, trigger_price=0.0,
+                portfolio='750001',
+                exchange=Exchange.MOEX,
+                symbol='SiH5',
+                side=OrderSide.SELL,
+                quantity=1,
+                condition=ExecutionCondition.LESS,
+                trigger_price=0.0,
             )
 
     @pytest.mark.asyncio
     async def test_empty_portfolio_rejected(self):
         client = _make_stub_alor_client()
-        with pytest.raises(ValueError, match="portfolio"):
+        with pytest.raises(ValueError, match='portfolio'):
             await client.create_stop_order(
-                portfolio="", exchange=Exchange.MOEX,
-                symbol="SiH5", side=OrderSide.SELL, quantity=1,
-                condition=ExecutionCondition.LESS, trigger_price=100.0,
+                portfolio='',
+                exchange=Exchange.MOEX,
+                symbol='SiH5',
+                side=OrderSide.SELL,
+                quantity=1,
+                condition=ExecutionCondition.LESS,
+                trigger_price=100.0,
             )
 
 
@@ -193,33 +235,47 @@ class TestCreateStopOrderValidation:
 # update_market_order / update_limit_order validation
 # ---------------------------------------------------------------------------
 
-class TestUpdateOrderValidation:
 
+class TestUpdateOrderValidation:
     @pytest.mark.asyncio
     async def test_update_market_zero_quantity_rejected(self):
         client = _make_stub_alor_client()
-        with pytest.raises(ValueError, match="quantity"):
+        with pytest.raises(ValueError, match='quantity'):
             await client.update_market_order(
-                order_id="123", portfolio="D12345", exchange=Exchange.MOEX,
-                symbol="SBER", side=OrderSide.BUY, quantity=0,
+                order_id='123',
+                portfolio='D12345',
+                exchange=Exchange.MOEX,
+                symbol='SBER',
+                side=OrderSide.BUY,
+                quantity=0,
             )
 
     @pytest.mark.asyncio
     async def test_update_limit_zero_price_rejected(self):
         client = _make_stub_alor_client()
-        with pytest.raises(ValueError, match="price"):
+        with pytest.raises(ValueError, match='price'):
             await client.update_limit_order(
-                order_id="123", portfolio="D12345", exchange=Exchange.MOEX,
-                symbol="SBER", side=OrderSide.BUY, quantity=10, price=0.0,
+                order_id='123',
+                portfolio='D12345',
+                exchange=Exchange.MOEX,
+                symbol='SBER',
+                side=OrderSide.BUY,
+                quantity=10,
+                price=0.0,
             )
 
     @pytest.mark.asyncio
     async def test_update_limit_negative_price_rejected(self):
         client = _make_stub_alor_client()
-        with pytest.raises(ValueError, match="price"):
+        with pytest.raises(ValueError, match='price'):
             await client.update_limit_order(
-                order_id="123", portfolio="D12345", exchange=Exchange.MOEX,
-                symbol="SBER", side=OrderSide.BUY, quantity=10, price=-50.0,
+                order_id='123',
+                portfolio='D12345',
+                exchange=Exchange.MOEX,
+                symbol='SBER',
+                side=OrderSide.BUY,
+                quantity=10,
+                price=-50.0,
             )
 
 
@@ -227,18 +283,19 @@ class TestUpdateOrderValidation:
 # Regression: _get_unix_timestamp_ns
 # ---------------------------------------------------------------------------
 
-class TestTimestampNs:
 
+class TestTimestampNs:
     def test_timestamp_ns_sane_range(self):
-        from multibroker.mb_client import MBClient
         ts = MBClient._get_unix_timestamp_ns()
-        assert 1_000_000_000_000_000_000 < ts < 3_000_000_000_000_000_000, \
-            f"Timestamp {ts} is outside sane nanosecond range — possible double-multiply bug"
+        assert 1_000_000_000_000_000_000 < ts < 3_000_000_000_000_000_000, (
+            f'Timestamp {ts} is outside sane nanosecond range — possible double-multiply bug'
+        )
 
 
 # ---------------------------------------------------------------------------
 # X-REQID presence on all mutating endpoints
 # ---------------------------------------------------------------------------
+
 
 class TestXReqidPresence:
     """Verify that all order-mutating methods set X-REQID in headers."""
@@ -249,12 +306,13 @@ class TestXReqidPresence:
         client = _make_stub_alor_client()
         captured = {}
 
-        async def spy(self_, call_type, resource, data=None, params=None,
-                      headers=None, signed=False, api_variable_path=None):
+        async def spy(
+            self_, call_type, resource, data=None, params=None, headers=None, signed=False, api_variable_path=None
+        ):
             captured.update(headers or {})
-            return {"status_code": 200, "headers": {}, "response": {}}
+            return {'status_code': 200, 'headers': {}, 'response': {}}
 
-        with patch.object(MBClient, "_create_rest_call", spy):
+        with patch.object(MBClient, '_create_rest_call', spy):
             method = getattr(client, method_name)
             await method(**kwargs)
 
@@ -263,61 +321,84 @@ class TestXReqidPresence:
     @pytest.mark.asyncio
     async def test_create_market_order_has_reqid(self):
         h = await self._capture_headers(
-            "create_market_order",
-            portfolio="D1", exchange=Exchange.MOEX, symbol="SBER",
-            side=OrderSide.BUY, quantity=1,
+            'create_market_order',
+            portfolio='D1',
+            exchange=Exchange.MOEX,
+            symbol='SBER',
+            side=OrderSide.BUY,
+            quantity=1,
         )
-        assert "X-REQID" in h
+        assert 'X-REQID' in h
 
     @pytest.mark.asyncio
     async def test_create_limit_order_has_reqid(self):
         h = await self._capture_headers(
-            "create_limit_order",
-            portfolio="D1", exchange=Exchange.MOEX, symbol="SBER",
-            side=OrderSide.BUY, quantity=1, price=100.0,
+            'create_limit_order',
+            portfolio='D1',
+            exchange=Exchange.MOEX,
+            symbol='SBER',
+            side=OrderSide.BUY,
+            quantity=1,
+            price=100.0,
         )
-        assert "X-REQID" in h
+        assert 'X-REQID' in h
 
     @pytest.mark.asyncio
     async def test_delete_order_has_reqid(self):
         h = await self._capture_headers(
-            "delete_order",
-            portfolio="D1", exchange=Exchange.MOEX, order_id="999",
+            'delete_order',
+            portfolio='D1',
+            exchange=Exchange.MOEX,
+            order_id='999',
         )
-        assert "X-REQID" in h
+        assert 'X-REQID' in h
 
     @pytest.mark.asyncio
     async def test_delete_all_orders_has_reqid(self):
         h = await self._capture_headers(
-            "delete_all_orders",
-            portfolio="D1", exchange=Exchange.MOEX,
+            'delete_all_orders',
+            portfolio='D1',
+            exchange=Exchange.MOEX,
         )
-        assert "X-REQID" in h
+        assert 'X-REQID' in h
 
     @pytest.mark.asyncio
     async def test_create_stop_order_has_reqid(self):
         h = await self._capture_headers(
-            "create_stop_order",
-            portfolio="750001", exchange=Exchange.MOEX, symbol="SiH5",
-            side=OrderSide.SELL, quantity=1,
-            condition=ExecutionCondition.LESS, trigger_price=100.0,
+            'create_stop_order',
+            portfolio='750001',
+            exchange=Exchange.MOEX,
+            symbol='SiH5',
+            side=OrderSide.SELL,
+            quantity=1,
+            condition=ExecutionCondition.LESS,
+            trigger_price=100.0,
         )
-        assert "X-REQID" in h
+        assert 'X-REQID' in h
 
     @pytest.mark.asyncio
     async def test_update_market_order_has_reqid(self):
         h = await self._capture_headers(
-            "update_market_order",
-            order_id="123", portfolio="D1", exchange=Exchange.MOEX,
-            symbol="SBER", side=OrderSide.BUY, quantity=1,
+            'update_market_order',
+            order_id='123',
+            portfolio='D1',
+            exchange=Exchange.MOEX,
+            symbol='SBER',
+            side=OrderSide.BUY,
+            quantity=1,
         )
-        assert "X-REQID" in h
+        assert 'X-REQID' in h
 
     @pytest.mark.asyncio
     async def test_update_limit_order_has_reqid(self):
         h = await self._capture_headers(
-            "update_limit_order",
-            order_id="123", portfolio="D1", exchange=Exchange.MOEX,
-            symbol="SBER", side=OrderSide.BUY, quantity=1, price=100.0,
+            'update_limit_order',
+            order_id='123',
+            portfolio='D1',
+            exchange=Exchange.MOEX,
+            symbol='SBER',
+            side=OrderSide.BUY,
+            quantity=1,
+            price=100.0,
         )
-        assert "X-REQID" in h
+        assert 'X-REQID' in h

@@ -1,4 +1,5 @@
 """Shared fixtures for all test modules."""
+
 from __future__ import annotations
 
 import asyncio
@@ -7,13 +8,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from multibroker.clients.alor.AlorClient import AlorClient
+
 # ---------------------------------------------------------------------------
 # Stub AlorClient — bypasses real __init__ (no JWT HTTP call)
 # ---------------------------------------------------------------------------
 
+
 def _make_stub_alor_client(**overrides):
     """Create an AlorClient instance without calling __init__ (no real network)."""
-    from multibroker.clients.alor.AlorClient import AlorClient
 
     client = AlorClient.__new__(AlorClient)
     defaults = dict(
@@ -22,14 +25,14 @@ def _make_stub_alor_client(**overrides):
         subscription_sets={},
         ssl_context=MagicMock(spec=ssl.SSLContext),
         is_demo=True,
-        jwt_token="stub_jwt_token",
+        jwt_token='stub_jwt_token',
         jwt_token_decoded={},
         jwt_token_issued=9_999_999_999,  # far future → token never expires
         _jwt_aiohttp_session=None,
         _jwt_refresh_lock=asyncio.Lock(),
-        refresh_token="stub_refresh",
-        oauth_server="https://oauthdev.alor.ru",
-        rest_api_uri="https://apidev.alor.ru/",
+        refresh_token='stub_refresh',
+        oauth_server='https://oauthdev.alor.ru',
+        rest_api_uri='https://apidev.alor.ru/',
         accounts=[],
     )
     defaults.update(overrides)

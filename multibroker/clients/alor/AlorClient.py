@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import ssl
+import urllib.parse
+import urllib.request
 from datetime import UTC, datetime
 
 import aiohttp
@@ -59,8 +62,13 @@ class AlorClient(MBClient):
 
     jwt_token_ttl = 60  # Время жизни токена JWT в секундах
 
-    def __init__(self, refresh_token: str = '', is_demo: bool = False,
-                 api_trace_log: bool = False, ssl_context: ssl.SSLContext | None = None):
+    def __init__(
+        self,
+        refresh_token: str = '',
+        is_demo: bool = False,
+        api_trace_log: bool = False,
+        ssl_context: ssl.SSLContext | None = None,
+    ):
         """Инициализация.
 
         :param refresh_token: Токен
@@ -108,17 +116,13 @@ class AlorClient(MBClient):
 
         Uses requests-free approach: simple urllib for sync context.
         """
-        import json as _json
-        import urllib.parse
-        import urllib.request
-
         url = f'{self.oauth_server}/refresh?token={urllib.parse.quote(self.refresh_token)}'
         req = urllib.request.Request(url, method='POST')
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 body_bytes = resp.read()
                 if resp.status == 200:
-                    data = _json.loads(body_bytes.decode())
+                    data = json.loads(body_bytes.decode())
                     self.jwt_token = data['AccessToken']
                     self.jwt_token_decoded = decode(self.jwt_token, options={'verify_signature': False})
                     self.jwt_token_issued = int(datetime.now(UTC).timestamp())
@@ -146,8 +150,8 @@ class AlorClient(MBClient):
             self._jwt_aiohttp_session = aiohttp.ClientSession()
 
         async with self._jwt_aiohttp_session.post(
-                f'{self.oauth_server}/refresh',
-                params={'token': self.refresh_token},
+            f'{self.oauth_server}/refresh',
+            params={'token': self.refresh_token},
         ) as resp:
             if resp.status == 200:
                 data = await resp.json()
@@ -192,14 +196,27 @@ class AlorClient(MBClient):
         account_id = portfolio_id = 0
 
         for agreement in all_agreements:
-            for portfolio in all_portfolios[portfolio_id:portfolio_id + 3]:
+            for portfolio in all_portfolios[portfolio_id : portfolio_id + 3]:
                 if portfolio.startswith('D'):
                     type_ = 'securities'
                     exchanges = (Exchange.MOEX, Exchange.SPBX)
                     boards = (
-                        'TQRD', 'TQOY', 'TQIF', 'TQBR', 'MTQR', 'TQOB', 'TQIR',
-                        'EQRP_INFO', 'TQTF', 'FQDE', 'INDX', 'TQOD', 'FQBR',
-                        'TQCB', 'TQPI', 'TQBD',
+                        'TQRD',
+                        'TQOY',
+                        'TQIF',
+                        'TQBR',
+                        'MTQR',
+                        'TQOB',
+                        'TQIR',
+                        'EQRP_INFO',
+                        'TQTF',
+                        'FQDE',
+                        'INDX',
+                        'TQOD',
+                        'FQBR',
+                        'TQCB',
+                        'TQPI',
+                        'TQBD',
                     )
                 elif portfolio.startswith('G'):
                     type_ = 'fx'
@@ -208,16 +225,21 @@ class AlorClient(MBClient):
                 elif portfolio.startswith('750'):
                     type_ = 'derivatives'
                     exchanges = (Exchange.MOEX,)
-                    boards = ('SPBOPT', 'OPTCOMDTY', 'OPTSPOT', 'SPBFUT',
-                              'OPTCURNCY', 'RFUD', 'ROPD')
+                    boards = ('SPBOPT', 'OPTCOMDTY', 'OPTSPOT', 'SPBFUT', 'OPTCURNCY', 'RFUD', 'ROPD')
                 else:
                     LOG.warning(f'Не определен тип счета для договора {agreement}, портфеля {portfolio}')
                     continue
 
-                self.accounts.append(dict(
-                    account_id=account_id, agreement=agreement, portfolio=portfolio,
-                    type=type_, exchanges=exchanges, boards=boards,
-                ))
+                self.accounts.append(
+                    dict(
+                        account_id=account_id,
+                        agreement=agreement,
+                        portfolio=portfolio,
+                        type=type_,
+                        exchanges=exchanges,
+                        boards=boards,
+                    )
+                )
 
             account_id += 1
             portfolio_id += 3
@@ -229,15 +251,22 @@ class AlorClient(MBClient):
         return self.rest_api_uri
 
     async def _sign_payload(
-            self, rest_call_type: RestCallType, resource: str,
-            data: dict | None = None, params: dict | None = None, headers: dict | None = None,
+        self,
+        rest_call_type: RestCallType,
+        resource: str,
+        data: dict | None = None,
+        params: dict | None = None,
+        headers: dict | None = None,
     ) -> None:
         token = await self._ensure_jwt_token()
         headers['Content-Type'] = 'application/json'
         headers['Authorization'] = f'Bearer {token}'
 
     def _preprocess_rest_response(
-            self, status_code: int, headers: CIMultiDictProxy[str], body: dict | None,
+        self,
+        status_code: int,
+        headers: CIMultiDictProxy[str],
+        body: dict | None,
     ) -> None:
         if 200 <= status_code < 300:
             return
@@ -247,7 +276,8 @@ class AlorClient(MBClient):
             if exc_cls is BrokerRateLimitError:
                 raw = headers.get('Retry-After')
                 raise BrokerRateLimitError(
-                    status_code=status_code, body=body,
+                    status_code=status_code,
+                    body=body,
                     retry_after_sec=float(raw) if raw else None,
                 )
             raise exc_cls(status_code=status_code, body=body)
@@ -259,12 +289,16 @@ class AlorClient(MBClient):
         raise AlorRestException(status_code=status_code, body=body)
 
     def _get_websocket_mgr(
-            self, subscriptions: list[Subscription],
-            startup_delay_ms: int = 0, ssl_context=None,
+        self,
+        subscriptions: list[Subscription],
+        startup_delay_ms: int = 0,
+        ssl_context=None,
     ) -> WebsocketMgr:
         return AlorWebsocket(
-            subscriptions, ssl_context=ssl_context,
-            alor_client=self, is_demo=self.is_demo,
+            subscriptions,
+            ssl_context=ssl_context,
+            alor_client=self,
+            is_demo=self.is_demo,
         )
 
     # -----------------------------------------------------------------------
@@ -272,7 +306,10 @@ class AlorClient(MBClient):
     # -----------------------------------------------------------------------
     @staticmethod
     def _validate_order_params(
-            symbol: str, side: OrderSide | None, quantity: int, portfolio: str,
+        symbol: str,
+        side: OrderSide | None,
+        quantity: int,
+        portfolio: str,
     ) -> None:
         """Pre-flight check for order parameters.
 
@@ -280,23 +317,27 @@ class AlorClient(MBClient):
         to Alor and burning through retry attempts on obviously bad input.
         """
         if not symbol:
-            raise ValueError("Order symbol must not be empty")
+            raise ValueError('Order symbol must not be empty')
         if side is None:
-            raise ValueError("Order side must be specified (OrderSide.BUY or OrderSide.SELL)")
+            raise ValueError('Order side must be specified (OrderSide.BUY or OrderSide.SELL)')
         if quantity <= 0:
-            raise ValueError(f"Order quantity must be > 0, got {quantity}")
+            raise ValueError(f'Order quantity must be > 0, got {quantity}')
         if not portfolio:
-            raise ValueError("Order portfolio must not be empty")
+            raise ValueError('Order portfolio must not be empty')
 
     # -----------------------------------------------------------------------
     # REST retry wrapper (S-01, S-02)
     # -----------------------------------------------------------------------
     async def _create_rest_call(
-            self, rest_call_type: RestCallType, resource: str,
-            data: dict | None = None, params: dict | None = None,
-            headers: dict | None = None, signed: bool = False,
-            api_variable_path: str | None = None,
-            timeout_sec: float = REST_TIMEOUT_SEC,
+        self,
+        rest_call_type: RestCallType,
+        resource: str,
+        data: dict | None = None,
+        params: dict | None = None,
+        headers: dict | None = None,
+        signed: bool = False,
+        api_variable_path: str | None = None,
+        timeout_sec: float = REST_TIMEOUT_SEC,
     ) -> dict:
         last_exc: Exception | None = None
 
@@ -304,8 +345,13 @@ class AlorClient(MBClient):
             try:
                 async with asyncio.timeout(timeout_sec):
                     return await super()._create_rest_call(
-                        rest_call_type, resource, data, params,
-                        headers, signed, api_variable_path,
+                        rest_call_type,
+                        resource,
+                        data,
+                        params,
+                        headers,
+                        signed,
+                        api_variable_path,
                     )
 
             except BrokerAuthError:
@@ -315,44 +361,40 @@ class AlorClient(MBClient):
                 raise
 
             except BrokerRateLimitError as exc:
-                wait = exc.retry_after_sec or (RETRY_BACKOFF_BASE_SEC * 2 ** attempt)
+                wait = exc.retry_after_sec or (RETRY_BACKOFF_BASE_SEC * 2**attempt)
                 await asyncio.sleep(wait)
                 last_exc = exc
                 continue
 
             except BrokerServerError as exc:
-                wait = RETRY_BACKOFF_BASE_SEC * 2 ** attempt
+                wait = RETRY_BACKOFF_BASE_SEC * 2**attempt
                 await asyncio.sleep(wait)
                 last_exc = exc
                 continue
 
             except TimeoutError:
-                last_exc = BrokerTimeoutError(f"REST call timed out after {timeout_sec}s")
-                wait = RETRY_BACKOFF_BASE_SEC * 2 ** attempt
+                last_exc = BrokerTimeoutError(f'REST call timed out after {timeout_sec}s')
+                wait = RETRY_BACKOFF_BASE_SEC * 2**attempt
                 await asyncio.sleep(wait)
                 continue
 
             except aiohttp.ClientConnectionError as exc:
                 # Dead connection in pool, server disconnected, DNS failure, etc.
                 # Force-recreate the session and retry with a fresh connection.
-                LOG.warning(f"REST connection error (attempt {attempt + 1}/{MAX_RETRIES}): "
-                            f"{type(exc).__name__}: {exc}")
+                LOG.warning(f'REST connection error (attempt {attempt + 1}/{MAX_RETRIES}): {type(exc).__name__}: {exc}')
                 await self._recreate_rest_session()
                 last_exc = BrokerTimeoutError(
-                    f"Connection error after {MAX_RETRIES} attempts: {type(exc).__name__}: {exc}"
+                    f'Connection error after {MAX_RETRIES} attempts: {type(exc).__name__}: {exc}'
                 )
-                wait = RETRY_BACKOFF_BASE_SEC * 2 ** attempt
+                wait = RETRY_BACKOFF_BASE_SEC * 2**attempt
                 await asyncio.sleep(wait)
                 continue
 
             except aiohttp.ClientError as exc:
                 # Catch-all for other aiohttp issues (payload errors, etc.)
-                LOG.warning(f"REST client error (attempt {attempt + 1}/{MAX_RETRIES}): "
-                            f"{type(exc).__name__}: {exc}")
-                last_exc = BrokerTimeoutError(
-                    f"Client error: {type(exc).__name__}: {exc}"
-                )
-                wait = RETRY_BACKOFF_BASE_SEC * 2 ** attempt
+                LOG.warning(f'REST client error (attempt {attempt + 1}/{MAX_RETRIES}): {type(exc).__name__}: {exc}')
+                last_exc = BrokerTimeoutError(f'Client error: {type(exc).__name__}: {exc}')
+                wait = RETRY_BACKOFF_BASE_SEC * 2**attempt
                 await asyncio.sleep(wait)
                 continue
 
@@ -366,8 +408,10 @@ class AlorClient(MBClient):
     # =======================================================================
 
     async def get_portfolio_summary(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Получение информации о портфеле."""
         params = {'format': data_format.value}
@@ -375,8 +419,11 @@ class AlorClient(MBClient):
         return await self._create_get(resource, params=params, signed=True)
 
     async def get_positions(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            without_currency: bool = False, data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        without_currency: bool = False,
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Получение информации о позициях."""
         params = {
@@ -387,8 +434,11 @@ class AlorClient(MBClient):
         return await self._create_get(resource, params=params, signed=True)
 
     async def get_position(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            symbol: str = '', data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        symbol: str = '',
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Получение информации о позициях выбранного инструмента."""
         params = {'format': data_format.value}
@@ -396,8 +446,11 @@ class AlorClient(MBClient):
         return await self._create_get(resource, params=params, signed=True)
 
     async def get_trades(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            with_repo: bool = False, data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        with_repo: bool = False,
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Получение информации о сделках."""
         params = {
@@ -408,8 +461,11 @@ class AlorClient(MBClient):
         return await self._create_get(resource, params=params, signed=True)
 
     async def get_trade(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            symbol: str = '', data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        symbol: str = '',
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Получение информации о сделках по выбранному инструменту."""
         params = {'format': data_format.value}
@@ -417,8 +473,10 @@ class AlorClient(MBClient):
         return await self._create_get(resource, params=params, signed=True)
 
     async def get_forts_risk(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Получение информации о рисках на срочном рынке."""
         params = {'format': data_format.value}
@@ -426,8 +484,10 @@ class AlorClient(MBClient):
         return await self._create_get(resource, params=params, signed=True)
 
     async def get_risk(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Получение информации о рисках."""
         params = {'format': data_format.value}
@@ -435,8 +495,10 @@ class AlorClient(MBClient):
         return await self._create_get(resource, params=params, signed=True)
 
     async def get_login_positions(
-            self, login: str = '', without_currency: bool = False,
-            data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        login: str = '',
+        without_currency: bool = False,
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Получение информации о позициях по логину."""
         params = {
@@ -447,11 +509,16 @@ class AlorClient(MBClient):
         return await self._create_get(resource, params=params, signed=True)
 
     async def get_trades_history_v2(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            ticker: str | None = None, date_from: str | None = None,
-            id_from: int | None = None, limit: int | None = None,
-            descending: bool | None = None, side: OrderSide | None = None,
-            data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        ticker: str | None = None,
+        date_from: str | None = None,
+        id_from: int | None = None,
+        limit: int | None = None,
+        descending: bool | None = None,
+        side: OrderSide | None = None,
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Получение истории сделок v2."""
         params: dict = {'format': data_format.value}
@@ -472,10 +539,16 @@ class AlorClient(MBClient):
         return await self._create_get(resource, params=params, signed=True)
 
     async def get_trades_symbol_v2(
-            self, portfolio: str = '', exchange: Exchange | None = None, symbol: str = '',
-            date_from: str | None = None, id_from: int | None = None,
-            limit: int | None = None, is_descending: bool = False,
-            side: OrderSide | None = None, data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        symbol: str = '',
+        date_from: str | None = None,
+        id_from: int | None = None,
+        limit: int | None = None,
+        is_descending: bool = False,
+        side: OrderSide | None = None,
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Получение истории сделок (один тикер) v2."""
         params: dict = {'format': data_format.value}
@@ -498,9 +571,15 @@ class AlorClient(MBClient):
     # =======================================================================
 
     async def get_history(
-            self, exchange: Exchange | None = None, symbol: str = '', tf: int = 0,
-            seconds_from: int = 1, seconds_to: int = 32536799999, count_back: int = 0,
-            use_untraded: bool = False, data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        exchange: Exchange | None = None,
+        symbol: str = '',
+        tf: int = 0,
+        seconds_from: int = 1,
+        seconds_to: int = 32536799999,
+        count_back: int = 0,
+        use_untraded: bool = False,
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Запрос истории рынка для выбранных биржи и финансового инструмента."""
         params = {
@@ -521,8 +600,10 @@ class AlorClient(MBClient):
     # =======================================================================
 
     async def get_orders(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Получение информации о всех заявках."""
         params = {'format': data_format.value}
@@ -530,8 +611,11 @@ class AlorClient(MBClient):
         return await self._create_get(resource, params=params, signed=True)
 
     async def get_order(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            order_id: str = '', data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        order_id: str = '',
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Получение информации о выбранной заявке."""
         params = {'format': data_format.value}
@@ -539,10 +623,15 @@ class AlorClient(MBClient):
         return await self._create_get(resource, params=params, signed=True)
 
     async def create_market_order(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            symbol: str = '', symbol_group: str = '', side: OrderSide | None = None,
-            quantity: int = 0, comment: str = '',
-            time_in_force: ExecutionPeriod = ExecutionPeriod.GOOD_TILL_CANCELLED,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        symbol: str = '',
+        symbol_group: str = '',
+        side: OrderSide | None = None,
+        quantity: int = 0,
+        comment: str = '',
+        time_in_force: ExecutionPeriod = ExecutionPeriod.GOOD_TILL_CANCELLED,
     ) -> dict:
         """Создание рыночной заявки."""
         self._validate_order_params(symbol=symbol, side=side, quantity=quantity, portfolio=portfolio)
@@ -560,17 +649,23 @@ class AlorClient(MBClient):
         return await self._create_post(resource, data=data, headers=headers, signed=True)
 
     async def create_limit_order(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            symbol: str = '', symbol_group: str = '', side: OrderSide | None = None,
-            quantity: int = 0, comment: str = '',
-            time_in_force: ExecutionPeriod = ExecutionPeriod.GOOD_TILL_CANCELLED,
-            price: float = 0.0, iceberg_fixed: int | None = None,
-            iceberg_variance: int | None = None,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        symbol: str = '',
+        symbol_group: str = '',
+        side: OrderSide | None = None,
+        quantity: int = 0,
+        comment: str = '',
+        time_in_force: ExecutionPeriod = ExecutionPeriod.GOOD_TILL_CANCELLED,
+        price: float = 0.0,
+        iceberg_fixed: int | None = None,
+        iceberg_variance: int | None = None,
     ) -> dict:
         """Создание лимитной заявки."""
         self._validate_order_params(symbol=symbol, side=side, quantity=quantity, portfolio=portfolio)
         if price <= 0:
-            raise ValueError(f"Limit order price must be > 0, got {price}")
+            raise ValueError(f'Limit order price must be > 0, got {price}')
         headers = {'X-REQID': get_request_id()}
         data = {
             'side': str(side),
@@ -591,9 +686,12 @@ class AlorClient(MBClient):
         return await self._create_post(resource, data=data, headers=headers, signed=True)
 
     async def delete_order(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            order_id: str = '', is_stop_order: bool = False,
-            data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        order_id: str = '',
+        is_stop_order: bool = False,
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Снятие заявки."""
         headers = {'X-REQID': get_request_id()}
@@ -607,8 +705,10 @@ class AlorClient(MBClient):
         return await self._create_delete(resource, data=data, headers=headers, signed=True)
 
     async def delete_all_orders(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            is_stop_order: bool | None = None,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        is_stop_order: bool | None = None,
     ) -> dict:
         """Снять все биржевые и/или условные заявки для указанного портфеля."""
         headers = {'X-REQID': get_request_id()}
@@ -627,8 +727,10 @@ class AlorClient(MBClient):
     # =======================================================================
 
     async def get_stop_orders(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Получение информации о всех стоп-заявках."""
         params = {'format': data_format.value}
@@ -636,8 +738,11 @@ class AlorClient(MBClient):
         return await self._create_get(resource, params=params, signed=True)
 
     async def get_stop_order(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            order_id: str = '', data_format: DataFormat = DataFormat.SIMPLE,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        order_id: str = '',
+        data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
         """Получение информации о выбранной стоп-заявке."""
         params = {'format': data_format.value}
@@ -645,22 +750,29 @@ class AlorClient(MBClient):
         return await self._create_get(resource, params=params, signed=True)
 
     async def create_limit_stop_order(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            symbol: str = '', symbol_group: str = '', side: OrderSide | None = None,
-            quantity: int = 0,
-            time_in_force: ExecutionPeriod = ExecutionPeriod.GOOD_TILL_CANCELLED,
-            price: float = 0.0, iceberg_fixed: int | None = None,
-            iceberg_variance: int | None = None,
-            condition: ExecutionCondition | None = None, trigger_price: float = 0.0,
-            stop_end_unix_time: int = 0, protecting_seconds: int = 0,
-            need_activate: bool = True,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        symbol: str = '',
+        symbol_group: str = '',
+        side: OrderSide | None = None,
+        quantity: int = 0,
+        time_in_force: ExecutionPeriod = ExecutionPeriod.GOOD_TILL_CANCELLED,
+        price: float = 0.0,
+        iceberg_fixed: int | None = None,
+        iceberg_variance: int | None = None,
+        condition: ExecutionCondition | None = None,
+        trigger_price: float = 0.0,
+        stop_end_unix_time: int = 0,
+        protecting_seconds: int = 0,
+        need_activate: bool = True,
     ) -> dict:
         """Создание лимитной стоп-заявки."""
         self._validate_order_params(symbol=symbol, side=side, quantity=quantity, portfolio=portfolio)
         if price <= 0:
-            raise ValueError(f"Stop-limit order price must be > 0, got {price}")
+            raise ValueError(f'Stop-limit order price must be > 0, got {price}')
         if trigger_price <= 0:
-            raise ValueError(f"Trigger price must be > 0, got {trigger_price}")
+            raise ValueError(f'Trigger price must be > 0, got {trigger_price}')
         headers = {'X-REQID': get_request_id()}
         data = {
             'side': str(side),
@@ -691,11 +803,17 @@ class AlorClient(MBClient):
     # =======================================================================
 
     async def create_stop_order(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            symbol: str = '', symbol_group: str = '', side: OrderSide | None = None,
-            quantity: int = 0, condition: ExecutionCondition | None = None,
-            trigger_price: float = 0.0, stop_end_unix_time: int = 0,
-            comment: str = '',
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        symbol: str = '',
+        symbol_group: str = '',
+        side: OrderSide | None = None,
+        quantity: int = 0,
+        condition: ExecutionCondition | None = None,
+        trigger_price: float = 0.0,
+        stop_end_unix_time: int = 0,
+        comment: str = '',
     ) -> dict:
         """Создание рыночной стоп-заявки (R-01).
 
@@ -704,7 +822,7 @@ class AlorClient(MBClient):
         """
         self._validate_order_params(symbol=symbol, side=side, quantity=quantity, portfolio=portfolio)
         if trigger_price <= 0:
-            raise ValueError(f"Trigger price must be > 0, got {trigger_price}")
+            raise ValueError(f'Trigger price must be > 0, got {trigger_price}')
         headers = {'X-REQID': get_request_id()}
         data = {
             'side': str(side),
@@ -722,10 +840,16 @@ class AlorClient(MBClient):
         return await self._create_post(resource, data=data, headers=headers, signed=True)
 
     async def update_market_order(
-            self, order_id: str, portfolio: str = '', exchange: Exchange | None = None,
-            symbol: str = '', symbol_group: str = '', side: OrderSide | None = None,
-            quantity: int = 0, comment: str = '',
-            time_in_force: ExecutionPeriod = ExecutionPeriod.GOOD_TILL_CANCELLED,
+        self,
+        order_id: str,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        symbol: str = '',
+        symbol_group: str = '',
+        side: OrderSide | None = None,
+        quantity: int = 0,
+        comment: str = '',
+        time_in_force: ExecutionPeriod = ExecutionPeriod.GOOD_TILL_CANCELLED,
     ) -> dict:
         """Изменение рыночной заявки (R-02).
 
@@ -746,10 +870,17 @@ class AlorClient(MBClient):
         return await self._create_put(resource, data=data, headers=headers, signed=True)
 
     async def update_limit_order(
-            self, order_id: str, portfolio: str = '', exchange: Exchange | None = None,
-            symbol: str = '', symbol_group: str = '', side: OrderSide | None = None,
-            quantity: int = 0, price: float = 0.0, comment: str = '',
-            time_in_force: ExecutionPeriod = ExecutionPeriod.GOOD_TILL_CANCELLED,
+        self,
+        order_id: str,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        symbol: str = '',
+        symbol_group: str = '',
+        side: OrderSide | None = None,
+        quantity: int = 0,
+        price: float = 0.0,
+        comment: str = '',
+        time_in_force: ExecutionPeriod = ExecutionPeriod.GOOD_TILL_CANCELLED,
     ) -> dict:
         """Изменение лимитной заявки (R-03).
 
@@ -757,7 +888,7 @@ class AlorClient(MBClient):
         """
         self._validate_order_params(symbol=symbol, side=side, quantity=quantity, portfolio=portfolio)
         if price <= 0:
-            raise ValueError(f"Limit order price must be > 0, got {price}")
+            raise ValueError(f'Limit order price must be > 0, got {price}')
         headers = {'X-REQID': get_request_id()}
         data = {
             'side': str(side),
@@ -773,9 +904,13 @@ class AlorClient(MBClient):
         return await self._create_put(resource, data=data, headers=headers, signed=True)
 
     async def estimate_order(
-            self, portfolio: str = '', exchange: Exchange | None = None,
-            symbol: str = '', side: OrderSide | None = None,
-            quantity: int = 0, price: float | None = None,
+        self,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        symbol: str = '',
+        side: OrderSide | None = None,
+        quantity: int = 0,
+        price: float | None = None,
     ) -> dict:
         """Оценка заявки — хватит ли ГО (R-04).
 
