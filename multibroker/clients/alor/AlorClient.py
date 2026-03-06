@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import socket
 import ssl
 import urllib.parse
 import urllib.request
@@ -147,7 +148,9 @@ class AlorClient(MBClient):
     async def _refresh_jwt(self) -> str:
         """Async JWT refresh via aiohttp (M-04: no requests dependency)."""
         if self._jwt_aiohttp_session is None or self._jwt_aiohttp_session.closed:
-            self._jwt_aiohttp_session = aiohttp.ClientSession()
+            # TCPConnector with IPv4-only to fix Docker IPv6 issues
+            connector = aiohttp.TCPConnector(family=socket.AF_INET)
+            self._jwt_aiohttp_session = aiohttp.ClientSession(connector=connector)
 
         async with self._jwt_aiohttp_session.post(
             f'{self.oauth_server}/refresh',

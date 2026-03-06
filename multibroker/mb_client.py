@@ -3,6 +3,7 @@ import datetime
 import enum
 import json
 import logging
+import socket
 import ssl
 import time
 from abc import ABC, abstractmethod
@@ -205,10 +206,12 @@ class MBClient(ABC):
         # TCPConnector with aggressive cleanup of dead connections:
         # - keepalive_timeout=30: close idle connections before Alor/nginx does (~60s)
         # - limit=30: bound the connection pool (we don't need 100 parallel conns)
+        # - family=socket.AF_INET: force IPv4 only (fixes Docker IPv6 issues)
         connector = aiohttp.TCPConnector(
             limit=30,
             keepalive_timeout=30,
             ssl=self.ssl_context,
+            family=socket.AF_INET,
         )
 
         if self.api_trace_log:

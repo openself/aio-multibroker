@@ -2,3 +2,7 @@
 /.idea/
 /.ruff_cache/
 /.pytest_cache/
+/.pypackages/
+/multibroker/__pycache__/
+/multibroker/clients/__pycache__/
+/multibroker/clients/alor/__pycache__/

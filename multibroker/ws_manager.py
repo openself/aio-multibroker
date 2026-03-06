@@ -2,6 +2,7 @@ import asyncio
 import enum
 import json
 import logging
+import socket
 import ssl
 from abc import ABC, abstractmethod
 from typing import Any
@@ -121,7 +122,9 @@ class AiohttpWebsocket(Websocket):
         if self.ws is not None:
             raise MBException('Websocket reattempted to make connection while previous one is still active.')
 
-        self.session = aiohttp.ClientSession()
+        # TCPConnector with IPv4-only to fix Docker IPv6 issues
+        connector = aiohttp.TCPConnector(family=socket.AF_INET)
+        self.session = aiohttp.ClientSession(connector=connector)
         self.ws = await self.session.ws_connect(
             url=self.websocket_uri,
             max_msg_size=self.max_message_size,
