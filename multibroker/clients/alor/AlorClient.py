@@ -906,6 +906,93 @@ class AlorClient(MBClient):
         resource = f'/commandapi/warptrans/TRADE/v2/client/orders/actions/limit/{order_id}'
         return await self._create_put(resource, data=data, headers=headers, signed=True)
 
+    async def update_stop_order(
+        self,
+        stop_order_id: str,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        symbol: str = '',
+        symbol_group: str = '',
+        side: OrderSide | None = None,
+        quantity: int = 0,
+        condition: ExecutionCondition | None = None,
+        trigger_price: float = 0.0,
+        stop_end_unix_time: int = 0,
+        comment: str = '',
+    ) -> dict:
+        """Изменение стоп-заявки.
+
+        Endpoint: PUT /commandapi/warptrans/TRADE/v2/client/orders/actions/stop/{stopOrderId}
+        """
+        self._validate_order_params(symbol=symbol, side=side, quantity=quantity, portfolio=portfolio)
+        if trigger_price <= 0:
+            raise ValueError(f'Trigger price must be > 0, got {trigger_price}')
+        headers = {'X-REQID': get_request_id()}
+        data = {
+            'side': str(side),
+            'quantity': quantity,
+            'instrument': {'symbol': symbol, 'exchange': str(exchange), 'instrumentGroup': symbol_group},
+            'user': {'portfolio': portfolio},
+            'condition': str(condition),
+            'triggerPrice': trigger_price,
+            'stopEndUnixTime': stop_end_unix_time,
+            'comment': comment,
+        }
+        resource = f'/commandapi/warptrans/TRADE/v2/client/orders/actions/stop/{stop_order_id}'
+        return await self._create_put(resource, data=data, headers=headers, signed=True)
+
+    async def update_stop_limit_order(
+        self,
+        stop_order_id: str,
+        portfolio: str = '',
+        exchange: Exchange | None = None,
+        symbol: str = '',
+        symbol_group: str = '',
+        side: OrderSide | None = None,
+        quantity: int = 0,
+        price: float = 0.0,
+        time_in_force: ExecutionPeriod = ExecutionPeriod.GOOD_TILL_CANCELLED,
+        iceberg_fixed: int | None = None,
+        iceberg_variance: int | None = None,
+        condition: ExecutionCondition | None = None,
+        trigger_price: float = 0.0,
+        stop_end_unix_time: int = 0,
+        protecting_seconds: int = 0,
+        comment: str = '',
+    ) -> dict:
+        """Изменение лимитной стоп-заявки.
+
+        Endpoint: PUT /commandapi/warptrans/TRADE/v2/client/orders/actions/stopLimit/{stopOrderId}
+        """
+        self._validate_order_params(symbol=symbol, side=side, quantity=quantity, portfolio=portfolio)
+        if price <= 0:
+            raise ValueError(f'Stop-limit order price must be > 0, got {price}')
+        if trigger_price <= 0:
+            raise ValueError(f'Trigger price must be > 0, got {trigger_price}')
+        headers = {'X-REQID': get_request_id()}
+        data = {
+            'side': str(side),
+            'type': 'limit',
+            'quantity': quantity,
+            'price': price,
+            'instrument': {'symbol': symbol, 'exchange': str(exchange), 'instrumentGroup': symbol_group},
+            'user': {'portfolio': portfolio},
+            'timeInForce': str(time_in_force),
+            'condition': str(condition),
+            'triggerPrice': trigger_price,
+            'stopEndUnixTime': stop_end_unix_time,
+            'comment': comment,
+        }
+        if iceberg_fixed:
+            data['icebergFixed'] = iceberg_fixed
+        if iceberg_variance:
+            data['icebergVariance'] = iceberg_variance
+        if protecting_seconds:
+            data['protectingSeconds'] = protecting_seconds
+
+        resource = f'/commandapi/warptrans/TRADE/v2/client/orders/actions/stopLimit/{stop_order_id}'
+        return await self._create_put(resource, data=data, headers=headers, signed=True)
+
     async def estimate_order(
         self,
         portfolio: str = '',
