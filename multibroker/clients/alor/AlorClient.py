@@ -418,7 +418,7 @@ class AlorClient(MBClient):
     ) -> dict:
         """Получение информации о портфеле."""
         params = {'format': data_format.value}
-        resource = f'md/v2/clients/{exchange.value}/{portfolio}/summary'
+        resource = f'md/v2/Clients/{exchange.value}/{portfolio}/summary'
         return await self._create_get(resource, params=params, signed=True)
 
     async def get_positions(
@@ -610,7 +610,7 @@ class AlorClient(MBClient):
     ) -> dict:
         """Получение информации о всех заявках."""
         params = {'format': data_format.value}
-        resource = f'md/v2/clients/{exchange}/{portfolio}/orders'
+        resource = f'md/v2/Clients/{exchange}/{portfolio}/orders'
         return await self._create_get(resource, params=params, signed=True)
 
     async def get_order(
@@ -622,7 +622,7 @@ class AlorClient(MBClient):
     ) -> dict:
         """Получение информации о выбранной заявке."""
         params = {'format': data_format.value}
-        resource = f'md/v2/clients/{exchange}/{portfolio}/orders/{order_id}'
+        resource = f'md/v2/Clients/{exchange}/{portfolio}/orders/{order_id}'
         return await self._create_get(resource, params=params, signed=True)
 
     async def create_market_order(
@@ -635,20 +635,21 @@ class AlorClient(MBClient):
         quantity: int = 0,
         comment: str = '',
         time_in_force: ExecutionPeriod = ExecutionPeriod.GOOD_TILL_CANCELLED,
+        allow_margin: bool = True,
     ) -> dict:
         """Создание рыночной заявки."""
         self._validate_order_params(symbol=symbol, side=side, quantity=quantity, portfolio=portfolio)
         headers = {'X-REQID': get_request_id()}
         data = {
             'side': str(side),
-            'type': 'market',
             'quantity': quantity,
             'instrument': {'symbol': symbol, 'exchange': str(exchange), 'instrumentGroup': symbol_group},
             'user': {'portfolio': portfolio},
             'comment': comment,
             'timeInForce': str(time_in_force),
+            'allowMargin': allow_margin,
         }
-        resource = '/commandapi/warptrans/TRADE/v2/client/orders/actions/market'
+        resource = 'commandapi/warptrans/TRADE/v2/client/orders/actions/market'
         return await self._create_post(resource, data=data, headers=headers, signed=True)
 
     async def create_limit_order(
@@ -664,6 +665,7 @@ class AlorClient(MBClient):
         price: float = 0.0,
         iceberg_fixed: int | None = None,
         iceberg_variance: int | None = None,
+        allow_margin: bool = True,
     ) -> dict:
         """Создание лимитной заявки."""
         self._validate_order_params(symbol=symbol, side=side, quantity=quantity, portfolio=portfolio)
@@ -672,20 +674,20 @@ class AlorClient(MBClient):
         headers = {'X-REQID': get_request_id()}
         data = {
             'side': str(side),
-            'type': 'limit',
             'quantity': quantity,
             'price': price,
             'instrument': {'symbol': symbol, 'exchange': str(exchange), 'instrumentGroup': symbol_group},
             'user': {'portfolio': portfolio},
             'comment': comment,
             'timeInForce': str(time_in_force),
+            'allowMargin': allow_margin,
         }
         if iceberg_fixed:
             data['icebergFixed'] = iceberg_fixed
         if iceberg_variance:
             data['icebergVariance'] = iceberg_variance
 
-        resource = '/commandapi/warptrans/TRADE/v2/client/orders/actions/limit'
+        resource = 'commandapi/warptrans/TRADE/v2/client/orders/actions/limit'
         return await self._create_post(resource, data=data, headers=headers, signed=True)
 
     async def delete_order(
@@ -696,16 +698,26 @@ class AlorClient(MBClient):
         is_stop_order: bool = False,
         data_format: DataFormat = DataFormat.SIMPLE,
     ) -> dict:
-        """Снятие заявки."""
+        """Снятие заявки.
+
+        Alor expects cancellation parameters as query parameters, not in the
+        request body. Sending them in the body results in a 403 because the
+        server cannot determine the target portfolio. This endpoint only supports
+        the MOEX exchange.
+        """
+        if exchange != Exchange.MOEX:
+            raise ValueError(f'Delete order endpoint only supports MOEX, got {exchange}')
         headers = {'X-REQID': get_request_id()}
-        data = {
+        params = {
             'portfolio': portfolio,
             'exchange': str(exchange),
-            'stop': str(is_stop_order),
+            'stop': str(is_stop_order).lower(),
             'format': str(data_format),
         }
-        resource = f'/commandapi/warptrans/TRADE/v2/client/orders/{order_id}'
-        return await self._create_delete(resource, data=data, headers=headers, signed=True)
+        resource = f'commandapi/warptrans/TRADE/v2/client/orders/{order_id}'
+        return await self._create_delete(
+            resource, params=params, headers=headers, signed=True
+        )
 
     async def delete_all_orders(
         self,
@@ -713,17 +725,24 @@ class AlorClient(MBClient):
         exchange: Exchange | None = None,
         is_stop_order: bool | None = None,
     ) -> dict:
-        """Снять все биржевые и/или условные заявки для указанного портфеля."""
+        """Снять все биржевые и/или условные заявки для указанного портфеля.
+
+        Only supports the MOEX exchange.
+        """
+        if exchange != Exchange.MOEX:
+            raise ValueError(f'Delete all orders endpoint only supports MOEX, got {exchange}')
         headers = {'X-REQID': get_request_id()}
-        data: dict = {
+        params: dict = {
             'portfolio': portfolio,
             'exchange': str(exchange),
         }
         if is_stop_order is not None:
-            data['stop'] = str(is_stop_order)
+            params['stop'] = str(is_stop_order).lower()
 
-        resource = '/commandapi/warptrans/TRADE/v2/client/orders/all'
-        return await self._create_delete(resource, data=data, headers=headers, signed=True)
+        resource = 'commandapi/warptrans/TRADE/v2/client/orders/all'
+        return await self._create_delete(
+            resource, params=params, headers=headers, signed=True
+        )
 
     # =======================================================================
     # Stop Orders — условные заявки
@@ -737,7 +756,7 @@ class AlorClient(MBClient):
     ) -> dict:
         """Получение информации о всех стоп-заявках."""
         params = {'format': data_format.value}
-        resource = f'md/v2/clients/{exchange}/{portfolio}/stoporders'
+        resource = f'md/v2/Clients/{exchange}/{portfolio}/stoporders'
         return await self._create_get(resource, params=params, signed=True)
 
     async def get_stop_order(
@@ -749,7 +768,7 @@ class AlorClient(MBClient):
     ) -> dict:
         """Получение информации о выбранной стоп-заявке."""
         params = {'format': data_format.value}
-        resource = f'md/v2/clients/{exchange}/{portfolio}/stoporders/{order_id}'
+        resource = f'md/v2/Clients/{exchange}/{portfolio}/stoporders/{order_id}'
         return await self._create_get(resource, params=params, signed=True)
 
     async def create_limit_stop_order(
@@ -769,9 +788,12 @@ class AlorClient(MBClient):
         stop_end_unix_time: int = 0,
         protecting_seconds: int = 0,
         need_activate: bool = True,
+        allow_margin: bool = True,
     ) -> dict:
         """Создание лимитной стоп-заявки."""
         self._validate_order_params(symbol=symbol, side=side, quantity=quantity, portfolio=portfolio)
+        if condition is None:
+            raise ValueError('Stop-limit order condition must be specified')
         if price <= 0:
             raise ValueError(f'Stop-limit order price must be > 0, got {price}')
         if trigger_price <= 0:
@@ -779,15 +801,15 @@ class AlorClient(MBClient):
         headers = {'X-REQID': get_request_id()}
         data = {
             'side': str(side),
-            'type': 'limit',
             'quantity': quantity,
             'price': price,
             'instrument': {'symbol': symbol, 'exchange': str(exchange), 'instrumentGroup': symbol_group},
             'user': {'portfolio': portfolio},
             'timeInForce': str(time_in_force),
-            'condition': str(condition),
+            'condition': str(condition.value).lower(),
             'triggerPrice': trigger_price,
-            'activate': str(need_activate),
+            'activate': bool(need_activate),
+            'allowMargin': allow_margin,
         }
         if iceberg_fixed:
             data['icebergFixed'] = iceberg_fixed
@@ -798,7 +820,7 @@ class AlorClient(MBClient):
         if protecting_seconds:
             data['protectingSeconds'] = protecting_seconds
 
-        resource = '/commandapi/warptrans/TRADE/v2/client/orders/actions/stopLimit'
+        resource = 'commandapi/warptrans/TRADE/v2/client/orders/actions/stopLimit'
         return await self._create_post(resource, data=data, headers=headers, signed=True)
 
     # =======================================================================
@@ -817,6 +839,7 @@ class AlorClient(MBClient):
         trigger_price: float = 0.0,
         stop_end_unix_time: int = 0,
         comment: str = '',
+        allow_margin: bool = True,
     ) -> dict:
         """Создание рыночной стоп-заявки (R-01).
 
@@ -824,22 +847,26 @@ class AlorClient(MBClient):
         Endpoint: POST /commandapi/warptrans/TRADE/v2/client/orders/actions/stop
         """
         self._validate_order_params(symbol=symbol, side=side, quantity=quantity, portfolio=portfolio)
+        if condition is None:
+            raise ValueError('Stop order condition must be specified')
         if trigger_price <= 0:
             raise ValueError(f'Trigger price must be > 0, got {trigger_price}')
         headers = {'X-REQID': get_request_id()}
         data = {
             'side': str(side),
-            'type': 'market',
             'quantity': quantity,
             'instrument': {'symbol': symbol, 'exchange': str(exchange), 'instrumentGroup': symbol_group},
             'user': {'portfolio': portfolio},
-            'condition': str(condition),
+            'condition': str(condition.value).lower(),
             'triggerPrice': trigger_price,
-            'stopEndUnixTime': stop_end_unix_time,
             'activate': True,
             'comment': comment,
+            'allowMargin': allow_margin,
         }
-        resource = '/commandapi/warptrans/TRADE/v2/client/orders/actions/stop'
+        if stop_end_unix_time:
+            data['stopEndUnixTime'] = stop_end_unix_time
+
+        resource = 'commandapi/warptrans/TRADE/v2/client/orders/actions/stop'
         return await self._create_post(resource, data=data, headers=headers, signed=True)
 
     async def update_market_order(
@@ -853,6 +880,7 @@ class AlorClient(MBClient):
         quantity: int = 0,
         comment: str = '',
         time_in_force: ExecutionPeriod = ExecutionPeriod.GOOD_TILL_CANCELLED,
+        allow_margin: bool = True,
     ) -> dict:
         """Изменение рыночной заявки (R-02).
 
@@ -862,14 +890,14 @@ class AlorClient(MBClient):
         headers = {'X-REQID': get_request_id()}
         data = {
             'side': str(side),
-            'type': 'market',
             'quantity': quantity,
             'instrument': {'symbol': symbol, 'exchange': str(exchange), 'instrumentGroup': symbol_group},
             'user': {'portfolio': portfolio},
             'comment': comment,
             'timeInForce': str(time_in_force),
+            'allowMargin': allow_margin,
         }
-        resource = f'/commandapi/warptrans/TRADE/v2/client/orders/actions/market/{order_id}'
+        resource = f'commandapi/warptrans/TRADE/v2/client/orders/actions/market/{order_id}'
         return await self._create_put(resource, data=data, headers=headers, signed=True)
 
     async def update_limit_order(
@@ -884,6 +912,7 @@ class AlorClient(MBClient):
         price: float = 0.0,
         comment: str = '',
         time_in_force: ExecutionPeriod = ExecutionPeriod.GOOD_TILL_CANCELLED,
+        allow_margin: bool = True,
     ) -> dict:
         """Изменение лимитной заявки (R-03).
 
@@ -895,15 +924,14 @@ class AlorClient(MBClient):
         headers = {'X-REQID': get_request_id()}
         data = {
             'side': str(side),
-            'type': 'limit',
             'quantity': quantity,
             'price': price,
             'instrument': {'symbol': symbol, 'exchange': str(exchange), 'instrumentGroup': symbol_group},
             'user': {'portfolio': portfolio},
             'comment': comment,
-            'timeInForce': str(time_in_force),
+            'allowMargin': allow_margin,
         }
-        resource = f'/commandapi/warptrans/TRADE/v2/client/orders/actions/limit/{order_id}'
+        resource = f'commandapi/warptrans/TRADE/v2/client/orders/actions/limit/{order_id}'
         return await self._create_put(resource, data=data, headers=headers, signed=True)
 
     async def update_stop_order(
@@ -998,7 +1026,6 @@ class AlorClient(MBClient):
         portfolio: str = '',
         exchange: Exchange | None = None,
         symbol: str = '',
-        side: OrderSide | None = None,
         quantity: int = 0,
         price: float | None = None,
     ) -> dict:
@@ -1011,11 +1038,10 @@ class AlorClient(MBClient):
             'ticker': symbol,
             'exchange': str(exchange),
             'board': '',  # Alor определяет автоматически
-            'side': str(side),
-            'quantity': quantity,
+            'lotQuantity': quantity,
         }
         if price is not None:
             data['price'] = price
 
-        resource = '/commandapi/warptrans/TRADE/v2/client/orders/estimate'
+        resource = 'commandapi/warptrans/TRADE/v2/client/orders/estimate'
         return await self._create_post(resource, data=data, signed=True)

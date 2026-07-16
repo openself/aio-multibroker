@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from multibroker.clients.alor.AlorClient import AlorClient
-from multibroker.clients.alor.enums import Exchange, ExecutionCondition, OrderSide
-from multibroker.mb_client import MBClient
+from multibroker.clients.alor.enums import DataFormat, Exchange, ExecutionCondition, ExecutionPeriod, OrderSide
+from multibroker.mb_client import MBClient, RestCallType
 from tests.conftest import _make_stub_alor_client
 
 # ---------------------------------------------------------------------------
@@ -195,6 +195,21 @@ class TestCreateLimitStopOrderValidation:
                 condition=ExecutionCondition.LESS_OR_EQUAL,
             )
 
+    @pytest.mark.asyncio
+    async def test_none_condition_rejected(self):
+        client = _make_stub_alor_client()
+        with pytest.raises(ValueError, match='condition'):
+            await client.create_limit_stop_order(
+                portfolio='750001',
+                exchange=Exchange.MOEX,
+                symbol='SiH5',
+                side=OrderSide.SELL,
+                quantity=1,
+                price=100.0,
+                trigger_price=90.0,
+                condition=None,
+            )
+
 
 # ---------------------------------------------------------------------------
 # create_stop_order validation
@@ -229,6 +244,91 @@ class TestCreateStopOrderValidation:
                 condition=ExecutionCondition.LESS,
                 trigger_price=100.0,
             )
+
+    @pytest.mark.asyncio
+    async def test_none_condition_rejected(self):
+        client = _make_stub_alor_client()
+        with pytest.raises(ValueError, match='condition'):
+            await client.create_stop_order(
+                portfolio='750001',
+                exchange=Exchange.MOEX,
+                symbol='SiH5',
+                side=OrderSide.SELL,
+                quantity=1,
+                condition=None,
+                trigger_price=100.0,
+            )
+
+
+# ---------------------------------------------------------------------------
+# Stop order serialization matches Alor spec
+# ---------------------------------------------------------------------------
+
+
+class TestStopOrderSerialization:
+    """Verify condition and activate are serialized exactly as Alor expects."""
+
+    @pytest.mark.asyncio
+    async def _capture_data(self, method_name: str, **kwargs) -> dict:
+        client = _make_stub_alor_client()
+        captured = {}
+
+        async def spy(
+            self_, call_type, resource, data=None, params=None, headers=None, signed=False, api_variable_path=None
+        ):
+            captured.update(data or {})
+            return {'status_code': 200, 'headers': {}, 'response': {}}
+
+        with patch.object(MBClient, '_create_rest_call', spy):
+            method = getattr(client, method_name)
+            await method(**kwargs)
+
+        return captured
+
+    @pytest.mark.asyncio
+    async def test_create_stop_order_condition_is_lowercase(self):
+        data = await self._capture_data(
+            'create_stop_order',
+            portfolio='750001',
+            exchange=Exchange.MOEX,
+            symbol='SiH5',
+            side=OrderSide.SELL,
+            quantity=1,
+            condition=ExecutionCondition.LESS_OR_EQUAL,
+            trigger_price=100.0,
+        )
+        assert data['condition'] == 'lessorequal'
+
+    @pytest.mark.asyncio
+    async def test_create_limit_stop_order_condition_is_lowercase(self):
+        data = await self._capture_data(
+            'create_limit_stop_order',
+            portfolio='750001',
+            exchange=Exchange.MOEX,
+            symbol='SiH5',
+            side=OrderSide.SELL,
+            quantity=1,
+            price=100.0,
+            condition=ExecutionCondition.MORE,
+            trigger_price=90.0,
+        )
+        assert data['condition'] == 'more'
+
+    @pytest.mark.asyncio
+    async def test_create_limit_stop_order_activate_is_boolean(self):
+        data = await self._capture_data(
+            'create_limit_stop_order',
+            portfolio='750001',
+            exchange=Exchange.MOEX,
+            symbol='SiH5',
+            side=OrderSide.SELL,
+            quantity=1,
+            price=100.0,
+            condition=ExecutionCondition.LESS,
+            trigger_price=90.0,
+            need_activate=False,
+        )
+        assert data['activate'] is False
 
 
 # ---------------------------------------------------------------------------
@@ -402,3 +502,239 @@ class TestXReqidPresence:
             price=100.0,
         )
         assert 'X-REQID' in h
+
+
+# ---------------------------------------------------------------------------
+# Delete order parameters must be query params, not request body
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteOrderQueryParams:
+    """Verify cancellation parameters are sent as URL query parameters.
+
+    Alor's DELETE /client/orders/{orderId} endpoint expects portfolio,
+    exchange, stop and format as query parameters. Sending them in the
+    request body causes a 403 because the server cannot resolve the portfolio.
+    """
+
+    @pytest.mark.asyncio
+    async def _capture_call(self, method_name: str, **kwargs) -> dict:
+        """Call a method on stubbed client, capture the full _create_rest_call args."""
+        client = _make_stub_alor_client()
+        captured = {}
+
+        async def spy(
+            self_, call_type, resource, data=None, params=None, headers=None, signed=False, api_variable_path=None
+        ):
+            captured.update(
+                {
+                    'call_type': call_type,
+                    'resource': resource,
+                    'data': data,
+                    'params': params,
+                    'headers': headers,
+                    'signed': signed,
+                }
+            )
+            return {'status_code': 200, 'headers': {}, 'response': {}}
+
+        with patch.object(MBClient, '_create_rest_call', spy):
+            method = getattr(client, method_name)
+            await method(**kwargs)
+
+        return captured
+
+    @pytest.mark.asyncio
+    async def test_delete_order_uses_query_params(self):
+        captured = await self._capture_call(
+            'delete_order',
+            portfolio='75025G0',
+            exchange=Exchange.MOEX,
+            order_id='2022430370894812645',
+            is_stop_order=False,
+            data_format=DataFormat.SIMPLE,
+        )
+        assert captured['call_type'] == RestCallType.DELETE
+        assert captured['resource'] == 'commandapi/warptrans/TRADE/v2/client/orders/2022430370894812645'
+        assert captured['data'] is None
+        assert captured['params'] == {
+            'portfolio': '75025G0',
+            'exchange': 'MOEX',
+            'stop': 'false',
+            'format': 'Simple',
+        }
+        assert captured['signed'] is True
+
+    @pytest.mark.asyncio
+    async def test_delete_all_orders_uses_query_params(self):
+        captured = await self._capture_call(
+            'delete_all_orders',
+            portfolio='75025G0',
+            exchange=Exchange.MOEX,
+            is_stop_order=True,
+        )
+        assert captured['call_type'] == RestCallType.DELETE
+        assert captured['resource'] == 'commandapi/warptrans/TRADE/v2/client/orders/all'
+        assert captured['data'] is None
+        assert captured['params'] == {
+            'portfolio': '75025G0',
+            'exchange': 'MOEX',
+            'stop': 'true',
+        }
+        assert captured['signed'] is True
+
+    @pytest.mark.asyncio
+    async def test_delete_order_rejects_non_moex_exchange(self):
+        client = _make_stub_alor_client()
+        with pytest.raises(ValueError, match='only supports MOEX'):
+            await client.delete_order(
+                portfolio='75025G0',
+                exchange=Exchange.SPBX,
+                order_id='123',
+            )
+
+    @pytest.mark.asyncio
+    async def test_delete_all_orders_rejects_non_moex_exchange(self):
+        client = _make_stub_alor_client()
+        with pytest.raises(ValueError, match='only supports MOEX'):
+            await client.delete_all_orders(
+                portfolio='75025G0',
+                exchange=Exchange.SPBX,
+            )
+
+
+# ---------------------------------------------------------------------------
+# allowMargin presence on create/update order methods
+# ---------------------------------------------------------------------------
+
+
+class TestAllowMarginPresence:
+    """Verify that create/update order methods include allowMargin=True by default."""
+
+    @pytest.mark.asyncio
+    async def _capture_data(self, method_name: str, **kwargs) -> dict:
+        """Call a method on stubbed client, capture the data dict passed to _create_rest_call."""
+        client = _make_stub_alor_client()
+        captured = {}
+
+        async def spy(
+            self_, call_type, resource, data=None, params=None, headers=None, signed=False, api_variable_path=None
+        ):
+            captured.update(data or {})
+            return {'status_code': 200, 'headers': {}, 'response': {}}
+
+        with patch.object(MBClient, '_create_rest_call', spy):
+            method = getattr(client, method_name)
+            await method(**kwargs)
+
+        return captured
+
+    @pytest.mark.asyncio
+    async def test_create_market_order_includes_allow_margin(self):
+        data = await self._capture_data(
+            'create_market_order',
+            portfolio='D1',
+            exchange=Exchange.MOEX,
+            symbol='SBER',
+            side=OrderSide.BUY,
+            quantity=1,
+        )
+        assert data.get('allowMargin') is True
+
+    @pytest.mark.asyncio
+    async def test_create_limit_order_includes_allow_margin(self):
+        data = await self._capture_data(
+            'create_limit_order',
+            portfolio='D1',
+            exchange=Exchange.MOEX,
+            symbol='SBER',
+            side=OrderSide.BUY,
+            quantity=1,
+            price=100.0,
+        )
+        assert data.get('allowMargin') is True
+
+    @pytest.mark.asyncio
+    async def test_create_limit_order_has_no_type_field(self):
+        data = await self._capture_data(
+            'create_limit_order',
+            portfolio='D1',
+            exchange=Exchange.MOEX,
+            symbol='SBER',
+            side=OrderSide.BUY,
+            quantity=1,
+            price=100.0,
+        )
+        assert 'type' not in data
+
+    @pytest.mark.asyncio
+    async def test_create_stop_order_includes_allow_margin(self):
+        data = await self._capture_data(
+            'create_stop_order',
+            portfolio='750001',
+            exchange=Exchange.MOEX,
+            symbol='SiH5',
+            side=OrderSide.SELL,
+            quantity=1,
+            condition=ExecutionCondition.LESS,
+            trigger_price=100.0,
+        )
+        assert data.get('allowMargin') is True
+
+    @pytest.mark.asyncio
+    async def test_update_market_order_includes_allow_margin(self):
+        data = await self._capture_data(
+            'update_market_order',
+            order_id='123',
+            portfolio='D1',
+            exchange=Exchange.MOEX,
+            symbol='SBER',
+            side=OrderSide.BUY,
+            quantity=1,
+        )
+        assert data.get('allowMargin') is True
+
+    @pytest.mark.asyncio
+    async def test_update_limit_order_includes_allow_margin(self):
+        data = await self._capture_data(
+            'update_limit_order',
+            order_id='123',
+            portfolio='D1',
+            exchange=Exchange.MOEX,
+            symbol='SBER',
+            side=OrderSide.BUY,
+            quantity=1,
+            price=100.0,
+        )
+        assert data.get('allowMargin') is True
+
+    @pytest.mark.asyncio
+    async def test_update_limit_order_has_no_time_in_force_or_type(self):
+        data = await self._capture_data(
+            'update_limit_order',
+            order_id='123',
+            portfolio='D1',
+            exchange=Exchange.MOEX,
+            symbol='SBER',
+            side=OrderSide.BUY,
+            quantity=1,
+            price=100.0,
+            time_in_force=ExecutionPeriod.ONE_DAY,
+        )
+        assert 'timeInForce' not in data
+        assert 'type' not in data
+
+    @pytest.mark.asyncio
+    async def test_create_limit_stop_order_includes_allow_margin(self):
+        data = await self._capture_data(
+            'create_limit_stop_order',
+            portfolio='750001',
+            exchange=Exchange.MOEX,
+            symbol='SiH5',
+            side=OrderSide.SELL,
+            quantity=1,
+            price=100.0,
+            condition=ExecutionCondition.LESS,
+            trigger_price=90.0,
+        )
+        assert data.get('allowMargin') is True
