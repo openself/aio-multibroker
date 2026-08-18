@@ -328,6 +328,25 @@ class TestTimeout:
 
         assert result['status_code'] == 200
 
+    @pytest.mark.asyncio
+    async def test_timeout_triggers_session_recreate(self):
+        """A black-holed connection times out identically on every attempt over the
+        same pooled socket — TimeoutError must force a fresh session, same as
+        ClientConnectionError, or every retry just times out again."""
+        client, mock = _client_with_parent_mock(
+            [
+                TimeoutError(),
+                _ok_response(),
+            ]
+        )
+        client._recreate_rest_session = AsyncMock()
+
+        with _patch_super(client, mock):
+            result = await client._create_rest_call(RestCallType.GET, '/test', timeout_sec=0.01)
+
+        assert result['status_code'] == 200
+        client._recreate_rest_session.assert_awaited_once()
+
 
 # ---------------------------------------------------------------------------
 # Mixed error sequences

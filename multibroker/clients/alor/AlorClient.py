@@ -376,6 +376,13 @@ class AlorClient(MBClient):
                 continue
 
             except TimeoutError:
+                # A silently dead connection (NAT/LB black-holed it without an
+                # RST) looks identical to a slow server: no exception until our
+                # own timeout fires. Retrying on the same pooled connection
+                # just times out again — force a fresh one, same as we do for
+                # ClientConnectionError.
+                LOG.warning(f'REST call timed out (attempt {attempt + 1}/{MAX_RETRIES}, timeout={timeout_sec}s)')
+                await self._recreate_rest_session()
                 last_exc = BrokerTimeoutError(f'REST call timed out after {timeout_sec}s')
                 wait = RETRY_BACKOFF_BASE_SEC * 2**attempt
                 await asyncio.sleep(wait)
@@ -715,9 +722,7 @@ class AlorClient(MBClient):
             'format': str(data_format),
         }
         resource = f'commandapi/warptrans/TRADE/v2/client/orders/{order_id}'
-        return await self._create_delete(
-            resource, params=params, headers=headers, signed=True
-        )
+        return await self._create_delete(resource, params=params, headers=headers, signed=True)
 
     async def delete_all_orders(
         self,
@@ -740,9 +745,7 @@ class AlorClient(MBClient):
             params['stop'] = str(is_stop_order).lower()
 
         resource = 'commandapi/warptrans/TRADE/v2/client/orders/all'
-        return await self._create_delete(
-            resource, params=params, headers=headers, signed=True
-        )
+        return await self._create_delete(resource, params=params, headers=headers, signed=True)
 
     # =======================================================================
     # Stop Orders — условные заявки
