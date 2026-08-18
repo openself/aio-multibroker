@@ -6,3 +6,6 @@
 /multibroker/__pycache__/
 /multibroker/clients/__pycache__/
 /multibroker/clients/alor/__pycache__/
+__pycache__/
+.DS_Store
+uv.lock
