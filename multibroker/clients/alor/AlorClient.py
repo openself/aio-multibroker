@@ -379,10 +379,9 @@ class AlorClient(MBClient):
                 # A silently dead connection (NAT/LB black-holed it without an
                 # RST) looks identical to a slow server: no exception until our
                 # own timeout fires. Retrying on the same pooled connection
-                # just times out again — force a fresh one, same as we do for
-                # ClientConnectionError.
+                # just times out again — the session is already force-recreated
+                # in MBClient._create_rest_call, at the point of actual use.
                 LOG.warning(f'REST call timed out (attempt {attempt + 1}/{MAX_RETRIES}, timeout={timeout_sec}s)')
-                await self._recreate_rest_session()
                 last_exc = BrokerTimeoutError(f'REST call timed out after {timeout_sec}s')
                 wait = RETRY_BACKOFF_BASE_SEC * 2**attempt
                 await asyncio.sleep(wait)
@@ -390,9 +389,10 @@ class AlorClient(MBClient):
 
             except aiohttp.ClientConnectionError as exc:
                 # Dead connection in pool, server disconnected, DNS failure, etc.
-                # Force-recreate the session and retry with a fresh connection.
+                # Session recreation already happened in MBClient._create_rest_call
+                # (with an identity check, since rest_session is shared across
+                # coroutines) — just retry with a fresh connection here.
                 LOG.warning(f'REST connection error (attempt {attempt + 1}/{MAX_RETRIES}): {type(exc).__name__}: {exc}')
-                await self._recreate_rest_session()
                 last_exc = BrokerTimeoutError(
                     f'Connection error after {MAX_RETRIES} attempts: {type(exc).__name__}: {exc}'
                 )

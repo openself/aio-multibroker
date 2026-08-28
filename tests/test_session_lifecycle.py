@@ -4,6 +4,8 @@ Scenarios:
   - Session created lazily on first REST call
   - Session reused across calls
   - _recreate_rest_session closes old, next call creates new
+  - _recreate_rest_session identity-check: stale_session no longer matches
+    self.rest_session → no-op (another coroutine already replaced it)
   - close() with no session → no-op
   - close() with existing session → closes it
   - TCPConnector params (keepalive, limit, cleanup)
@@ -18,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 import aiohttp
 import pytest
 
-from multibroker.mb_client import SubscriptionSet
+from multibroker.mb_client import MBClient, RestCallType, SubscriptionSet
 from tests.conftest import _make_stub_alor_client
 
 
@@ -78,6 +80,100 @@ class TestSessionRecreation:
         # Should not raise
         await client._recreate_rest_session()
         assert client.rest_session is None
+
+    @pytest.mark.asyncio
+    async def test_recreate_with_matching_stale_session_closes_it(self):
+        """stale_session identity matches the live session → closes it, as usual."""
+        client = _make_stub_alor_client()
+        session = client._get_rest_session()
+
+        await client._recreate_rest_session(stale_session=session)
+
+        assert session.closed
+        assert client.rest_session is None
+
+    @pytest.mark.asyncio
+    async def test_recreate_with_stale_session_already_replaced_is_noop(self):
+        """rest_session is shared across coroutines: if another coroutine already
+        replaced it by the time we're called, our stale reference must not close
+        the fresh session or clear it out from under that coroutine."""
+        client = _make_stub_alor_client()
+        old_session = client._get_rest_session()
+        new_session = MagicMock(spec=aiohttp.ClientSession)
+        new_session.closed = False
+        client.rest_session = new_session  # another coroutine already recreated it
+
+        await client._recreate_rest_session(stale_session=old_session)
+
+        assert client.rest_session is new_session
+        assert not old_session.closed
+        await old_session.close()
+
+
+class TestConcurrentSessionRecreation:
+    """Exercise the real (unmocked) MBClient._create_rest_call, since patching it
+    wholesale — as tests/test_retry_and_network.py does for AlorClient's retry
+    wrapper — bypasses the identity-checked recreation entirely.
+
+    Calling `client._create_rest_call(...)` on an AlorClient instance resolves
+    to AlorClient's retry wrapper, not this method, so these call
+    `MBClient._create_rest_call(client, ...)` explicitly (unbound) to reach the
+    real base implementation without going through a real network call on retry.
+    """
+
+    @pytest.mark.asyncio
+    async def test_connection_error_recreates_the_session_it_actually_failed_on(self):
+        """A same-session failure closes that session and clears rest_session."""
+
+        class _FailingRequest:
+            async def __aenter__(self):
+                raise aiohttp.ServerDisconnectedError()
+
+            async def __aexit__(self, *args):
+                return False
+
+        client = _make_stub_alor_client()
+        session = MagicMock(spec=aiohttp.ClientSession)
+        session.closed = False
+        session.get = MagicMock(return_value=_FailingRequest())
+        session.close = AsyncMock()
+        client.rest_session = session
+
+        with pytest.raises(aiohttp.ServerDisconnectedError):
+            await MBClient._create_rest_call(client, RestCallType.GET, '/test')
+
+        session.close.assert_awaited_once()
+        assert client.rest_session is None
+
+    @pytest.mark.asyncio
+    async def test_failure_on_already_replaced_session_does_not_touch_the_new_one(self):
+        """Simulates the race the identity check exists for: while this call is
+        failing on session S1, another coroutine has already replaced it with
+        S2 by the time we get to recreate. S2 must survive untouched."""
+        replacement_session = MagicMock(spec=aiohttp.ClientSession)
+        replacement_session.closed = False
+
+        client = _make_stub_alor_client()
+
+        class _RacingFailure:
+            async def __aenter__(self):
+                client.rest_session = replacement_session
+                raise aiohttp.ServerDisconnectedError()
+
+            async def __aexit__(self, *args):
+                return False
+
+        original_session = MagicMock(spec=aiohttp.ClientSession)
+        original_session.closed = False
+        original_session.get = MagicMock(return_value=_RacingFailure())
+        original_session.close = AsyncMock()
+        client.rest_session = original_session
+
+        with pytest.raises(aiohttp.ServerDisconnectedError):
+            await MBClient._create_rest_call(client, RestCallType.GET, '/test')
+
+        original_session.close.assert_not_awaited()
+        assert client.rest_session is replacement_session
 
 
 class TestClose:

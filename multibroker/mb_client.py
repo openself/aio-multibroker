@@ -47,6 +47,7 @@ class MBClient(ABC):
         self.api_trace_log = api_trace_log
 
         self.rest_session = None
+        self._rest_session_lock: asyncio.Lock = asyncio.Lock()
         self.subscription_sets: dict[int, SubscriptionSet] = {}
 
         if ssl_context is not None:
@@ -159,20 +160,21 @@ class MBClient(ABC):
                 resource_uri += api_variable_path
             resource_uri += resource
 
+            session = self._get_rest_session()
             if rest_call_type == RestCallType.GET:
-                rest_call = self._get_rest_session().get(
+                rest_call = session.get(
                     resource_uri, json=data, params=params, headers=headers, ssl=self.ssl_context
                 )
             elif rest_call_type == RestCallType.POST:
-                rest_call = self._get_rest_session().post(
+                rest_call = session.post(
                     resource_uri, json=data, params=params, headers=headers, ssl=self.ssl_context
                 )
             elif rest_call_type == RestCallType.DELETE:
-                rest_call = self._get_rest_session().delete(
+                rest_call = session.delete(
                     resource_uri, json=data, params=params, headers=headers, ssl=self.ssl_context
                 )
             elif rest_call_type == RestCallType.PUT:
-                rest_call = self._get_rest_session().put(
+                rest_call = session.put(
                     resource_uri, json=data, params=params, headers=headers, ssl=self.ssl_context
                 )
             else:
@@ -182,22 +184,33 @@ class MBClient(ABC):
                 f'> rest type [{rest_call_type.name}], uri [{resource_uri}], '
                 f'params [{params}], headers [{headers}], data [{data}]'
             )
-            async with rest_call as response:
-                status_code = response.status
-                resp_headers = response.headers
-                body = await response.text()
+            try:
+                async with rest_call as response:
+                    status_code = response.status
+                    resp_headers = response.headers
+                    body = await response.text()
 
-                LOG.debug(f'<: status [{status_code}], response [{body}]')
+                    LOG.debug(f'<: status [{status_code}], response [{body}]')
 
-                if len(body) > 0:
-                    try:
-                        body = json.loads(body)
-                    except json.JSONDecodeError:
-                        body = {'raw': body}
+                    if len(body) > 0:
+                        try:
+                            body = json.loads(body)
+                        except json.JSONDecodeError:
+                            body = {'raw': body}
 
-                self._preprocess_rest_response(status_code, resp_headers, body)
+                    self._preprocess_rest_response(status_code, resp_headers, body)
 
-                return {'status_code': status_code, 'headers': resp_headers, 'response': body}
+                    return {'status_code': status_code, 'headers': resp_headers, 'response': body}
+            except (asyncio.CancelledError, TimeoutError, aiohttp.ClientConnectionError):
+                # A caller-side asyncio.timeout() (e.g. AlorClient's retry wrapper)
+                # cancels this coroutine, which surfaces here as CancelledError
+                # before being converted back to TimeoutError further up the stack;
+                # aiohttp's own per-request timeout can also raise TimeoutError
+                # directly at this point. Either way this is the only place that
+                # knows which session actually failed, so the identity check in
+                # _recreate_rest_session must happen here, not further up the stack.
+                await self._recreate_rest_session(stale_session=session)
+                raise
 
     def _get_rest_session(self) -> aiohttp.ClientSession:
         if self.rest_session is not None and not self.rest_session.closed:
@@ -234,16 +247,23 @@ class MBClient(ABC):
 
         return self.rest_session
 
-    async def _recreate_rest_session(self) -> None:
+    async def _recreate_rest_session(self, stale_session: aiohttp.ClientSession | None = None) -> None:
         """Force-close and recreate the REST session.
 
         Call this when the connection pool is suspected to be in a bad state
-        (e.g. after repeated aiohttp.ClientConnectionError).
+        (e.g. after repeated aiohttp.ClientConnectionError). ``rest_session``
+        is shared by every coroutine using this client, so pass the session
+        that actually failed as ``stale_session``: if another coroutine has
+        already replaced it by the time we get the lock, this becomes a
+        no-op instead of closing the fresh session out from under it.
         """
-        if self.rest_session is not None and not self.rest_session.closed:
-            LOG.warning('Force-closing REST session to recover from connection pool issues')
-            await self.rest_session.close()
-        self.rest_session = None
+        async with self._rest_session_lock:
+            if stale_session is not None and self.rest_session is not stale_session:
+                return
+            if self.rest_session is not None and not self.rest_session.closed:
+                LOG.warning('Force-closing REST session to recover from connection pool issues')
+                await self.rest_session.close()
+            self.rest_session = None
 
     @staticmethod
     def _clean_request_params(params: dict) -> dict:
