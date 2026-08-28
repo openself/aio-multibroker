@@ -378,11 +378,13 @@ class AlorClient(MBClient):
             except TimeoutError:
                 # A silently dead connection (NAT/LB black-holed it without an
                 # RST) looks identical to a slow server: no exception until our
-                # own timeout fires. Retrying on the same pooled connection
-                # just times out again — force a fresh one, same as we do for
-                # ClientConnectionError.
+                # own timeout fires. If the timeout landed on the REST call
+                # itself, MBClient._create_rest_call already force-recreated the
+                # session at the point of actual use; if it instead landed on
+                # _sign_payload's JWT refresh, that's a separate session not
+                # covered by that recreation. Retrying on the same pooled
+                # connection would just time out again either way.
                 LOG.warning(f'REST call timed out (attempt {attempt + 1}/{MAX_RETRIES}, timeout={timeout_sec}s)')
-                await self._recreate_rest_session()
                 last_exc = BrokerTimeoutError(f'REST call timed out after {timeout_sec}s')
                 wait = RETRY_BACKOFF_BASE_SEC * 2**attempt
                 await asyncio.sleep(wait)
@@ -390,9 +392,12 @@ class AlorClient(MBClient):
 
             except aiohttp.ClientConnectionError as exc:
                 # Dead connection in pool, server disconnected, DNS failure, etc.
-                # Force-recreate the session and retry with a fresh connection.
+                # If this failed on the REST session, MBClient._create_rest_call
+                # already force-recreated it (identity-checked, since rest_session
+                # is shared across coroutines). If it instead came from
+                # _sign_payload's JWT refresh (a separate session, not covered by
+                # that recreation), no recreation happens here — just retry.
                 LOG.warning(f'REST connection error (attempt {attempt + 1}/{MAX_RETRIES}): {type(exc).__name__}: {exc}')
-                await self._recreate_rest_session()
                 last_exc = BrokerTimeoutError(
                     f'Connection error after {MAX_RETRIES} attempts: {type(exc).__name__}: {exc}'
                 )

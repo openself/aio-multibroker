@@ -66,20 +66,25 @@ def _patch_super(client, mock):
 class TestConnectionErrors:
     @pytest.mark.asyncio
     async def test_server_disconnected_triggers_session_recreate(self):
-        """aiohttp.ServerDisconnectedError → _recreate_rest_session → retry → success."""
+        """aiohttp.ServerDisconnectedError → retry → success.
+
+        Session recreation itself now happens inside MBClient._create_rest_call,
+        at the point of actual use (see TestSessionRecreation in
+        test_session_lifecycle.py) — here `super()._create_rest_call` is fully
+        mocked out, so it can't be observed at this level, only the retry
+        behavior can.
+        """
         client, mock = _client_with_parent_mock(
             [
                 aiohttp.ServerDisconnectedError(),
                 _ok_response(),
             ]
         )
-        client._recreate_rest_session = AsyncMock()
 
         with _patch_super(client, mock):
             result = await client._create_rest_call(RestCallType.GET, '/test', timeout_sec=1)
 
         assert result['status_code'] == 200
-        client._recreate_rest_session.assert_awaited_once()
         assert mock.call_count == 2
 
     @pytest.mark.asyncio
@@ -332,20 +337,24 @@ class TestTimeout:
     async def test_timeout_triggers_session_recreate(self):
         """A black-holed connection times out identically on every attempt over the
         same pooled socket — TimeoutError must force a fresh session, same as
-        ClientConnectionError, or every retry just times out again."""
+        ClientConnectionError, or every retry just times out again.
+
+        Session recreation now happens inside MBClient._create_rest_call, at the
+        point of actual use (see TestSessionRecreation in test_session_lifecycle.py)
+        — here `super()._create_rest_call` is fully mocked out, so only the retry
+        behavior can be observed at this level.
+        """
         client, mock = _client_with_parent_mock(
             [
                 TimeoutError(),
                 _ok_response(),
             ]
         )
-        client._recreate_rest_session = AsyncMock()
 
         with _patch_super(client, mock):
             result = await client._create_rest_call(RestCallType.GET, '/test', timeout_sec=0.01)
 
         assert result['status_code'] == 200
-        client._recreate_rest_session.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +381,10 @@ class TestMixedErrors:
 
     @pytest.mark.asyncio
     async def test_disconnect_then_500_then_success(self):
+        """Session recreation on the disconnect now happens inside
+        MBClient._create_rest_call (mocked out here) — see
+        test_session_lifecycle.py for that behavior; this only covers the
+        retry sequencing across mixed error types."""
         client, mock = _client_with_parent_mock(
             [
                 aiohttp.ServerDisconnectedError(),
@@ -379,13 +392,11 @@ class TestMixedErrors:
                 _ok_response(),
             ]
         )
-        client._recreate_rest_session = AsyncMock()
 
         with _patch_super(client, mock):
             result = await client._create_rest_call(RestCallType.GET, '/test', timeout_sec=5)
 
         assert result['status_code'] == 200
-        client._recreate_rest_session.assert_awaited_once()  # only on the disconnect
 
 
 # ---------------------------------------------------------------------------

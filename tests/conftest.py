@@ -30,6 +30,7 @@ def _make_stub_alor_client(**overrides):
         jwt_token_issued=9_999_999_999,  # far future → token never expires
         _jwt_aiohttp_session=None,
         _jwt_refresh_lock=asyncio.Lock(),
+        _rest_session_lock=asyncio.Lock(),
         refresh_token='stub_refresh',
         oauth_server='https://oauthdev.alor.ru',
         rest_api_uri='https://apidev.alor.ru/',
