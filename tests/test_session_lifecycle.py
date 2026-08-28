@@ -264,6 +264,38 @@ class TestClose:
         await client.close()
         assert client._jwt_aiohttp_session is None
 
+    @pytest.mark.asyncio
+    async def test_concurrent_get_rest_session_during_close_does_not_get_clobbered(self):
+        """Same race as TestSessionRecreation's interleaving test, but through
+        close(): a concurrent, unlocked _get_rest_session() call installing a
+        replacement while close() is still awaiting the stale session's
+        close() must not have that replacement cleared out from under it."""
+        client = _make_stub_alor_client()
+        stale_session = MagicMock(spec=aiohttp.ClientSession)
+        stale_session.closed = False
+        entered_close = asyncio.Event()
+        resume_close = asyncio.Event()
+
+        async def fake_close():
+            stale_session.closed = True
+            entered_close.set()
+            await resume_close.wait()
+
+        stale_session.close = fake_close
+        client.rest_session = stale_session
+
+        close_task = asyncio.create_task(client.close())
+        await entered_close.wait()
+
+        new_session = client._get_rest_session()
+        assert new_session is not stale_session
+
+        resume_close.set()
+        await close_task
+
+        assert client.rest_session is new_session
+        await new_session.close()
+
 
 class TestShutdownWebsockets:
     @pytest.mark.asyncio
