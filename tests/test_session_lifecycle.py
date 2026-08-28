@@ -15,6 +15,7 @@ Scenarios:
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
@@ -109,6 +110,41 @@ class TestSessionRecreation:
         assert not old_session.closed
         await old_session.close()
 
+    @pytest.mark.asyncio
+    async def test_concurrent_get_rest_session_during_close_await_does_not_get_clobbered(self):
+        """Real two-coroutine interleaving (not a single-task simulation): aiohttp
+        flips a session's `.closed` to True synchronously, before the awaited
+        close() actually finishes tearing down connections. While
+        _recreate_rest_session is suspended inside that await, a concurrent,
+        unlocked _get_rest_session() call can observe `.closed == True` and
+        install a replacement session — which must survive once the awaited
+        close() resumes and completes."""
+        client = _make_stub_alor_client()
+        stale_session = MagicMock(spec=aiohttp.ClientSession)
+        stale_session.closed = False
+        entered_close = asyncio.Event()
+        resume_close = asyncio.Event()
+
+        async def fake_close():
+            stale_session.closed = True  # flips synchronously, before teardown "finishes"
+            entered_close.set()
+            await resume_close.wait()  # simulate close() still tearing down connections
+
+        stale_session.close = fake_close
+        client.rest_session = stale_session
+
+        recreate_task = asyncio.create_task(client._recreate_rest_session(stale_session=stale_session))
+        await entered_close.wait()
+
+        new_session = client._get_rest_session()  # concurrent, unlocked
+        assert new_session is not stale_session
+
+        resume_close.set()
+        await recreate_task
+
+        assert client.rest_session is new_session
+        await new_session.close()
+
 
 class TestConcurrentSessionRecreation:
     """Exercise the real (unmocked) MBClient._create_rest_call, since patching it
@@ -174,6 +210,29 @@ class TestConcurrentSessionRecreation:
 
         original_session.close.assert_not_awaited()
         assert client.rest_session is replacement_session
+
+    @pytest.mark.asyncio
+    async def test_original_exception_propagates_even_if_recreate_itself_fails(self):
+        """If _recreate_rest_session's own cleanup raises, the original
+        connection failure must still propagate — cleanup errors must never
+        mask it."""
+
+        class _FailingRequest:
+            async def __aenter__(self):
+                raise aiohttp.ServerDisconnectedError()
+
+            async def __aexit__(self, *args):
+                return False
+
+        client = _make_stub_alor_client()
+        session = MagicMock(spec=aiohttp.ClientSession)
+        session.closed = False
+        session.get = MagicMock(return_value=_FailingRequest())
+        session.close = AsyncMock(side_effect=RuntimeError('close blew up'))
+        client.rest_session = session
+
+        with pytest.raises(aiohttp.ServerDisconnectedError):
+            await MBClient._create_rest_call(client, RestCallType.GET, '/test')
 
 
 class TestClose:

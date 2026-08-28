@@ -81,9 +81,15 @@ class MBClient(ABC):
         pass
 
     async def close(self) -> None:
-        if self.rest_session is not None and not self.rest_session.closed:
-            await self.rest_session.close()
-            self.rest_session = None
+        async with self._rest_session_lock:
+            target = self.rest_session
+            if target is not None and not target.closed:
+                await target.close()
+            # See _recreate_rest_session below: target.closed can flip mid-await,
+            # letting an unlocked _get_rest_session() install a replacement while
+            # we're still awaiting close() — re-check identity before clearing.
+            if self.rest_session is target:
+                self.rest_session = None
 
     async def _create_get(
         self,
@@ -209,7 +215,11 @@ class MBClient(ABC):
                 # directly at this point. Either way this is the only place that
                 # knows which session actually failed, so the identity check in
                 # _recreate_rest_session must happen here, not further up the stack.
-                await self._recreate_rest_session(stale_session=session)
+                try:
+                    await self._recreate_rest_session(stale_session=session)
+                except Exception:
+                    # Never let cleanup mask the original failure being re-raised below.
+                    LOG.exception('Failed to recreate REST session after connection failure')
                 raise
 
     def _get_rest_session(self) -> aiohttp.ClientSession:
@@ -258,12 +268,19 @@ class MBClient(ABC):
         no-op instead of closing the fresh session out from under it.
         """
         async with self._rest_session_lock:
-            if stale_session is not None and self.rest_session is not stale_session:
+            target = stale_session if stale_session is not None else self.rest_session
+            if target is None or self.rest_session is not target:
                 return
-            if self.rest_session is not None and not self.rest_session.closed:
+            if not target.closed:
                 LOG.warning('Force-closing REST session to recover from connection pool issues')
-                await self.rest_session.close()
-            self.rest_session = None
+                await target.close()
+            # aiohttp flips a session's `.closed` synchronously, before the
+            # awaited close() above actually finishes tearing down connections
+            # — an unlocked _get_rest_session() can observe that and install a
+            # replacement while we're still awaiting. Re-check identity before
+            # clearing so we don't clobber that replacement.
+            if self.rest_session is target:
+                self.rest_session = None
 
     @staticmethod
     def _clean_request_params(params: dict) -> dict:
