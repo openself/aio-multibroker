@@ -610,6 +610,21 @@ class AlorClient(MBClient):
         resource = 'md/v2/history'
         return await self._create_get(resource, params=params, signed=True)
 
+    async def get_orderbook(
+        self,
+        exchange: Exchange | None = None,
+        symbol: str = '',
+        depth: int = 1,
+        data_format: DataFormat = DataFormat.SIMPLE,
+    ) -> dict:
+        """Стакан заявок инструмента: `depth` лучших уровней с обеих сторон."""
+        params = {
+            'depth': max(1, depth),
+            'format': data_format.value,
+        }
+        resource = f'md/v2/orderbooks/{exchange.value}/{symbol}'
+        return await self._create_get(resource, params=params, signed=True)
+
     # =======================================================================
     # Orders — Биржевые заявки
     # =======================================================================
